@@ -1,0 +1,26 @@
+struct Insn {
+    U8* name;
+    I64 opc;
+    I64 ext;
+}
+
+const Insn TABLE[4] = {
+    {"mov", 0x89, -1},
+    {"add", 0x01, 0},
+    {"sub", 0x29, 5},
+    {"cmp", 0x39, 7}
+};
+
+const I64 PRIMES[5] = {2, 3, 5, 7, 11};
+
+I32 main() {
+    for I64 i = 0; i < 4; i++ {
+        "%s opcode %x ext %d\n", TABLE[i].name, TABLE[i].opc, TABLE[i].ext;
+    }
+    I64 sum = 0;
+    for I64 i = 0; i < 5; i++ {
+        sum = sum + PRIMES[i];
+    }
+    "primes sum %d\n", sum;
+    return 0;
+}

@@ -1,0 +1,34 @@
+import "heap";
+
+Bool eq(U8* a, U8* b) {
+    if a.len != b.len {
+        return false;
+    }
+    for I64 i = 0; i < a.len; i++ {
+        if a[i] != b[i] {
+            return false;
+        }
+    }
+    return true;
+}
+
+Bool less(U8* a, U8* b) {
+    I64 n = a.len;
+    if b.len < n {
+        n = b.len;
+    }
+    for I64 i = 0; i < n; i++ {
+        if a[i] != b[i] {
+            return a[i] < b[i];
+        }
+    }
+    return a.len < b.len;
+}
+
+U8* cstr(U8* s) {
+    U8* p = heap.alloc(s.len + 1);
+    for I64 i = 0; i < s.len; i++ {
+        p[i] = s[i];
+    }
+    return p[0 : s.len];
+}

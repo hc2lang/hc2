@@ -1,0 +1,14 @@
+
+const I64 DENT_RECLEN_AT = 16;
+
+struct _CapWords {
+    I64 addr;
+    I64 hdr;
+    I64 offlen;
+    I64 gen;
+}
+
+unsafe union _Cap {
+    _CapWords w;
+    U8* p;
+}

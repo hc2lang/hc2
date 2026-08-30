@@ -1,0 +1,5 @@
+sum 15
+sum 0
+empty: (0 args)
+three: 10 20 30 (3 args)
+expr: 14 8 (2 args)

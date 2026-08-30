@@ -1,0 +1,25 @@
+import "heap";
+
+U8* dec(I64 v) {
+    U8* b = heap.alloc(24);
+    if v == 0 {
+        b[0] = '0';
+        return b[0 : 1];
+    }
+    I64 neg = 0;
+    if v < 0 {
+        neg = 1;
+        v = -v;
+    }
+    I64 i = 24;
+    for v > 0 {
+        i = i - 1;
+        b[i] = ('0' + v % 10) as U8;
+        v = v / 10;
+    }
+    if neg == 1 {
+        i = i - 1;
+        b[i] = '-';
+    }
+    return b[i : 24];
+}

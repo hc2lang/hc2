@@ -1,0 +1,9 @@
+union W {
+    I64 i;
+    U8 b;
+}
+
+I32 main() {
+    W w = {1};
+    return 0;
+}

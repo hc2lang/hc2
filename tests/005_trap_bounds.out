@@ -1,0 +1,2 @@
+before
+tests/005_trap_bounds.hc2:5: trap: out of bounds

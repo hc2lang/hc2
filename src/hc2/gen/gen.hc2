@@ -1,0 +1,241 @@
+import "hc2/ast";
+import "hc2/check";
+import "hc2/opt";
+import "heap";
+import "hc2/diag";
+import "str";
+
+struct Em {
+    check.Ck* c;
+    ast.Ast* t;
+    U8* buf;
+    I64 len;
+    I64 cap;
+    U8* sb;
+    I64 sblen;
+    I64* spos;
+    I64* slen;
+    I64 nstr;
+    I64 nlabel;
+    I64 fn;
+    I64* defers;
+    I64 ndefer;
+    I64* brk;
+    I64* cont;
+    I64 nloop;
+    I64 retlab;
+    I64* swtab;
+    I64 nswent;
+    I64* swpos;
+    I64* swlen;
+    I64 nsw;
+    opt.Op* o;
+    I64* hstk;
+    I64* hreg;
+    I64 nh;
+    I64 ro1;
+    I64 ro2;
+    I64 macho;
+}
+Em* em_sized(check.Ck* c, I64 out) {
+    Em* e = heap.alloc(sizeof(Em)) as Em*;
+    e.c = c;
+    e.t = c.t;
+    e.buf = heap.alloc(out);
+    e.len = 0;
+    e.cap = out;
+    e.sb = heap.alloc(out / 12);
+    e.sblen = 0;
+    e.spos = heap.alloc(out / 3072 * sizeof(I64)) as I64*;
+    e.slen = heap.alloc(out / 3072 * sizeof(I64)) as I64*;
+    e.nstr = 0;
+    e.nlabel = 0;
+    e.fn = 0;
+    e.defers = heap.alloc(256 * sizeof(I64)) as I64*;
+    e.ndefer = 0;
+    e.brk = heap.alloc(64 * sizeof(I64)) as I64*;
+    e.cont = heap.alloc(64 * sizeof(I64)) as I64*;
+    e.nloop = 0;
+    e.retlab = 0;
+    e.swtab = heap.alloc(out / 192 * sizeof(I64)) as I64*;
+    e.nswent = 0;
+    e.swpos = heap.alloc(out / 12288 * sizeof(I64)) as I64*;
+    e.swlen = heap.alloc(out / 12288 * sizeof(I64)) as I64*;
+    e.nsw = 0;
+    e.o = opt.op_new(c);
+    e.hstk = heap.alloc(64 * sizeof(I64)) as I64*;
+    e.hreg = heap.alloc(64 * sizeof(I64)) as I64*;
+    e.nh = 0;
+    e.ro1 = 0;
+    e.ro2 = 0;
+    e.macho = 0;
+    return e;
+}
+Em* em_new(check.Ck* c) {
+    return em_sized(c, 48 << 20);
+}
+U0 em_reset(Em* e) {
+    e.len = 0;
+    e.sblen = 0;
+    e.nstr = 0;
+    e.nlabel = 0;
+    e.ndefer = 0;
+    e.nloop = 0;
+    e.nswent = 0;
+    e.nsw = 0;
+    e.nh = 0;
+}
+U0 out(Em* e, U8* s) {
+    if e.len + s.len > e.cap {
+        diag.die("output buffer full");
+    }
+    for I64 i = 0; i < s.len; i++ {
+        e.buf[e.len + i] = s[i];
+    }
+    e.len = e.len + s.len;
+}
+U0 outc(Em* e, I64 ch) {
+    e.buf[e.len] = ch as U8;
+    e.len = e.len + 1;
+}
+U0 outu(Em* e, I64 v) {
+    U64 u = v as U64;
+    if u >= 10 {
+        outu(e, (u / 10) as I64);
+    }
+    outc(e, '0' + ((u % 10) as I64));
+}
+U0 outi(Em* e, I64 v) {
+    if v < 0 {
+        outc(e, '-');
+        outu(e, -v);
+        return;
+    }
+    outu(e, v);
+}
+U0 lbl(Em* e, I64 n) {
+    out(e, ".Lt");
+    outi(e, n);
+}
+I64 newlabel(Em* e) {
+    I64 l = e.nlabel;
+    e.nlabel = l + 1;
+    return l;
+}
+I64 pool(Em* e, U8* s) {
+    if e.nstr >= 16384 {
+        diag.die("too many string literals");
+    }
+    I64 id = e.nstr;
+    e.spos[id] = e.sblen;
+    e.slen[id] = s.len;
+    for I64 i = 0; i < s.len; i++ {
+        e.sb[e.sblen + i] = s[i];
+    }
+    e.sblen = e.sblen + s.len;
+    e.nstr = id + 1;
+    return id;
+}
+U0 sbc(Em* e, I64 ch) {
+    e.sb[e.sblen] = ch as U8;
+    e.sblen = e.sblen + 1;
+}
+U0 sbu(Em* e, I64 v) {
+    if v >= 10 {
+        sbu(e, v / 10);
+    }
+    sbc(e, '0' + v % 10);
+}
+I64 pool_site(Em* e, I64 n) {
+    ast.Ast* t = e.t;
+    U8* path = ast.file_path(t, ast.ng(t, n, ast.N_FID));
+    I64 id = e.nstr;
+    e.spos[id] = e.sblen;
+    for I64 i = 0; i < path.len; i++ {
+        sbc(e, path[i] as I64);
+    }
+    sbc(e, ':');
+    sbu(e, ast.nline(t, n));
+    sbc(e, ':');
+    sbc(e, ' ');
+    sbc(e, 't');
+    sbc(e, 'r');
+    sbc(e, 'a');
+    sbc(e, 'p');
+    sbc(e, ':');
+    sbc(e, ' ');
+    e.slen[id] = e.sblen - e.spos[id];
+    e.nstr = id + 1;
+    return id;
+}
+I64 hoisted(Em* e, I64 n) {
+    if e.o.on == 0 {
+        return 0;
+    }
+    I64 f = e.o.skip[n];
+    if f == 0 {
+        return 0;
+    }
+    for I64 k = 0; k < e.nh; k++ {
+        if e.hstk[k] == f {
+            return e.o.hoist[f];
+        }
+    }
+    return 0;
+}
+I64 spreg(Em* e, I64 n) {
+    if e.o.on == 0 {
+        return -1;
+    }
+    I64 f = e.o.skip[n];
+    if f == 0 {
+        return -1;
+    }
+    for I64 k = 0; k < e.nh; k++ {
+        if e.hstk[k] == f {
+            return e.hreg[k];
+        }
+    }
+    return -1;
+}
+I64 leafish(Em* e, I64 n) {
+    ast.Ast* t = e.t;
+    I64 k = ast.nkind(t, n);
+    if k == ast.ND_NUM {
+        return 1;
+    }
+    if k == ast.ND_VAR || k == ast.ND_GVAR {
+        if check.tp_cls(check.get_ty(e.c, n)) != 1 {
+            return 0;
+        }
+        return 1;
+    }
+    if k == ast.ND_AS {
+        if check.tp_cls(check.get_ty(e.c, n)) != 1 {
+            return 0;
+        }
+        return leafish(e, ast.na(t, n));
+    }
+    return 0;
+}
+I64 arg_bytes(check.Ck* c, I64 p) {
+    if check.tp_isptr(check.resolve_dty(c, p)) {
+        return 32;
+    }
+    return 8;
+}
+U0 emit_sym(Em* e, I64 f) {
+    ast.Ast* t = e.t;
+    U8* path = ast.pkg_path(t, ast.node_pkg(t, f));
+    for I64 i = 0; i < path.len; i++ {
+        if path[i] == '/' {
+            outc(e, '.');
+        } else {
+            outc(e, path[i] as I64);
+        }
+    }
+    if path.len > 0 {
+        outc(e, '.');
+    }
+    out(e, ast.nname(t, f));
+}

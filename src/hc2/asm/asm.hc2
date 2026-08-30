@@ -1,0 +1,2877 @@
+import "hash";
+import "hc2/diag";
+import "str";
+import "hc2/isa";
+import "hc2/isa/a64";
+import "hc2/isa/x86";
+import "heap";
+
+const I64 OPR_REG  = 1;
+const I64 OPR_IMM  = 2;
+const I64 OPR_MEM  = 3;
+const I64 OPR_LBL  = 4;
+const I64 OPR_RIP  = 5;
+
+struct Op {
+    I64 kind;
+    I64 reg;
+    I64 size;
+    I64 base;
+    I64 idx;
+    I64 scale;
+    I64 disp;
+    I64 noff;
+    I64 nlen;
+    I64 imm;
+}
+
+struct As {
+    U8* src;
+    I64 pos;
+    I64 line;
+    U8* text;
+    I64 tlen;
+    U8* rodata;
+    I64 rlen;
+    U8* data;
+    I64 dlen;
+    I64 sec;
+    I64 pass;
+    I64* hash;
+    I64* snoff;
+    I64* snlen;
+    I64* ssec;
+    I64* soff;
+    I64 nsym;
+    I64* rel;
+    I64* rwhere;
+    I64* rwide;
+    I64* rsec;
+    I64* roff;
+    I64* rnoff;
+    I64* rnlen;
+    I64 nrel;
+    I64* gnoff;
+    I64* gnlen;
+    I64* gsec;
+    I64* goff;
+    I64 ngsym;
+    U8* blob;
+    I64 bloblen;
+    I64 fbt;
+    I64 fbr;
+    I64 fbd;
+    I64 fbrel;
+    I64 fbg;
+    Op* a;
+    Op* b;
+    Op* none;
+    I64 mlen;
+    I64 moff;
+    I64 bits;
+    I64 org;
+    Bool flat;
+    I64 isa;
+}
+
+const I64 HASHN = 65536;
+
+As* as_sized(I64 code) {
+    As* s = heap.alloc(sizeof(As)) as As*;
+    s.src = "";
+    s.pos = 0;
+    s.line = 1;
+    s.text = heap.alloc(code);
+    s.tlen = 0;
+    s.rodata = heap.alloc(code);
+    s.rlen = 0;
+    s.data = heap.alloc(code / 8);
+    s.dlen = 0;
+    s.sec = 0;
+    s.pass = 1;
+    s.hash = heap.alloc(HASHN * sizeof(I64)) as I64*;
+    s.snoff = heap.alloc(code / 128 * sizeof(I64)) as I64*;
+    s.snlen = heap.alloc(code / 128 * sizeof(I64)) as I64*;
+    s.ssec = heap.alloc(code / 128 * sizeof(I64)) as I64*;
+    s.soff = heap.alloc(code / 128 * sizeof(I64)) as I64*;
+    s.nsym = 0;
+    s.rel = heap.alloc(code / 32 * sizeof(I64)) as I64*;
+    s.rwhere = heap.alloc(code / 32 * sizeof(I64)) as I64*;
+    s.rwide = heap.alloc(code / 32 * sizeof(I64)) as I64*;
+    s.rsec = heap.alloc(code / 32 * sizeof(I64)) as I64*;
+    s.roff = heap.alloc(code / 32 * sizeof(I64)) as I64*;
+    s.rnoff = heap.alloc(code / 32 * sizeof(I64)) as I64*;
+    s.rnlen = heap.alloc(code / 32 * sizeof(I64)) as I64*;
+    s.nrel = 0;
+    s.gnoff = heap.alloc(code / 128 * sizeof(I64)) as I64*;
+    s.gnlen = heap.alloc(code / 128 * sizeof(I64)) as I64*;
+    s.gsec = heap.alloc(code / 128 * sizeof(I64)) as I64*;
+    s.goff = heap.alloc(code / 128 * sizeof(I64)) as I64*;
+    s.ngsym = 0;
+    s.blob = heap.alloc(code / 2);
+    s.bloblen = 0;
+    U8* st = "_start";
+    for I64 i = 0; i < st.len; i++ {
+        s.blob[i] = st[i];
+    }
+    s.bloblen = st.len;
+    s.fbt = 0;
+    s.fbr = 0;
+    s.fbd = 0;
+    s.fbrel = 0;
+    s.fbg = 0;
+    s.a = heap.alloc(sizeof(Op)) as Op*;
+    s.b = heap.alloc(sizeof(Op)) as Op*;
+    s.none = heap.alloc(sizeof(Op)) as Op*;
+    op_clear(s.none);
+    s.mlen = 0;
+    s.moff = 0;
+    s.bits = 64;
+    s.org = 0;
+    s.flat = false;
+    s.isa = isa.X86;
+    return s;
+}
+
+As* as_new() {
+    return as_sized(8 << 20);
+}
+
+U0 aerr(As* s, U8* msg) {
+    I64 st = s.pos;
+    for st > 0 {
+        if s.src[st - 1] == '\n' {
+            break;
+        }
+        st = st - 1;
+    }
+    I64 en = s.pos;
+    for en < s.src.len {
+        if s.src[en] == '\n' {
+            break;
+        }
+        en = en + 1;
+    }
+    "asm:%d: %s\n  in: %s\n", s.line, msg, s.src[st : en];
+    diag.die("assembly the compiler emitted was rejected by its own assembler");
+}
+
+U8* aname(As* s, I64 off, I64 len) {
+    return s.src[off : off + len];
+}
+
+I64 hashname(As* s, I64 off, I64 len) {
+    I64 h = 5381;
+    for I64 i = 0; i < len; i++ {
+        h = (h * 33 + (s.src[off + i] as I64)) % 1000000007;
+    }
+    return h % HASHN;
+}
+
+I64 sym_find(As* s, I64 off, I64 len) {
+    I64 h = hashname(s, off, len);
+    for true {
+        I64 v = s.hash[h];
+        if v == 0 {
+            return -1;
+        }
+        I64 i = v - 1;
+        if s.snlen[i] == len && str.eq(aname(s, s.snoff[i], s.snlen[i]), aname(s, off, len)) {
+            return i;
+        }
+        h = h + 1;
+        if h >= HASHN {
+            h = 0;
+        }
+    }
+    return -1;
+}
+
+U0 sym_add(As* s, I64 off, I64 len, I64 sec, I64 addr) {
+    if sym_find(s, off, len) >= 0 {
+        return;
+    }
+    I64 i = s.nsym;
+    s.snoff[i] = off;
+    s.snlen[i] = len;
+    s.ssec[i] = sec;
+    s.soff[i] = addr;
+    s.nsym = i + 1;
+    I64 h = hashname(s, off, len);
+    for s.hash[h] != 0 {
+        h = h + 1;
+        if h >= HASHN {
+            h = 0;
+        }
+    }
+    s.hash[h] = i + 1;
+}
+
+U0 emit8(As* s, I64 b) {
+    if s.sec == 0 {
+        s.text[s.tlen] = b as U8;
+        s.tlen = s.tlen + 1;
+        return;
+    }
+    if s.sec == 1 {
+        s.rodata[s.rlen] = b as U8;
+        s.rlen = s.rlen + 1;
+        return;
+    }
+    s.data[s.dlen] = b as U8;
+    s.dlen = s.dlen + 1;
+}
+
+I64 here(As* s) {
+    if s.sec == 0 {
+        return s.tlen;
+    }
+    if s.sec == 1 {
+        return s.rlen;
+    }
+    return s.dlen;
+}
+
+U0 emit16(As* s, I64 v) {
+    emit8(s, v & 255);
+    emit8(s, (v >> 8) & 255);
+}
+
+U0 emit32(As* s, I64 v) {
+    emit8(s, v & 255);
+    emit8(s, (v >> 8) & 255);
+    emit8(s, (v >> 16) & 255);
+    emit8(s, (v >> 24) & 255);
+}
+
+U0 emit64(As* s, I64 v) {
+    emit32(s, v & 4294967295);
+    emit32(s, (v >> 32) & 4294967295);
+}
+
+I64 blob_put(As* s, I64 off, I64 len) {
+    I64 at = s.bloblen;
+    for I64 i = 0; i < len; i++ {
+        s.blob[at + i] = s.src[off + i];
+    }
+    s.bloblen = at + len;
+    return at;
+}
+
+U0 mark_rel_sec(As* s, I64 sec, I64 off) {
+    if s.pass == 2 {
+        s.rel[s.nrel] = here(s);
+        s.rwhere[s.nrel] = s.sec;
+        s.rwide[s.nrel] = 4;
+        s.rsec[s.nrel] = sec;
+        s.roff[s.nrel] = off;
+        s.nrel = s.nrel + 1;
+    }
+}
+
+U0 mark_rel_name(As* s, I64 noff, I64 nlen) {
+    if s.pass == 2 {
+        s.rel[s.nrel] = here(s);
+        s.rwhere[s.nrel] = s.sec;
+        s.rwide[s.nrel] = 4;
+        s.rsec[s.nrel] = -1;
+        s.rnoff[s.nrel] = blob_put(s, noff, nlen);
+        s.rnlen[s.nrel] = nlen;
+        s.nrel = s.nrel + 1;
+    }
+}
+
+U0 mark_abs(As* s, I64 noff, I64 nlen) {
+    if s.pass == 2 {
+        s.rel[s.nrel] = here(s);
+        s.rwhere[s.nrel] = s.sec;
+        s.rwide[s.nrel] = 8;
+        if s.src[noff] == '.' {
+            I64 i = sym_find(s, noff, nlen);
+            if i < 0 {
+                aerr(s, "undefined local label");
+            }
+            s.rsec[s.nrel] = s.ssec[i];
+            s.roff[s.nrel] = s.soff[i];
+        } else {
+            s.rsec[s.nrel] = -1;
+            s.rnoff[s.nrel] = blob_put(s, noff, nlen);
+            s.rnlen[s.nrel] = nlen;
+        }
+        s.nrel = s.nrel + 1;
+    }
+}
+
+Bool at_end(As* s) {
+    return s.pos >= s.src.len;
+}
+
+I64 cur(As* s) {
+    if at_end(s) {
+        return -1;
+    }
+    return s.src[s.pos] as I64;
+}
+
+U0 skip_ws(As* s) {
+    for true {
+        I64 c = cur(s);
+        if c == ' ' || c == '\t' {
+            s.pos = s.pos + 1;
+        } else {
+            return;
+        }
+    }
+}
+
+Bool is_word(I64 c) {
+    if c >= 'a' && c <= 'z' {
+        return true;
+    }
+    if c >= 'A' && c <= 'Z' {
+        return true;
+    }
+    if c >= '0' && c <= '9' {
+        return true;
+    }
+    return c == '_' || c == '.';
+}
+
+U0 to_eol(As* s) {
+    for at_end(s) == false {
+        if s.src[s.pos] == '\n' {
+            return;
+        }
+        s.pos = s.pos + 1;
+    }
+}
+
+Bool eat(As* s, U8* w) {
+    skip_ws(s);
+    if s.pos + w.len > s.src.len {
+        return false;
+    }
+    for I64 i = 0; i < w.len; i++ {
+        if s.src[s.pos + i] != w[i] {
+            return false;
+        }
+    }
+    s.pos = s.pos + w.len;
+    return true;
+}
+
+I64 word_start(As* s) {
+    skip_ws(s);
+    return s.pos;
+}
+
+I64 word_len(As* s) {
+    I64 st = s.pos;
+    for is_word(cur(s)) {
+        s.pos = s.pos + 1;
+    }
+    return s.pos - st;
+}
+
+Bool at_hex(As* s) {
+    if cur(s) != '0' || s.pos + 1 >= s.src.len {
+        return false;
+    }
+    return s.src[s.pos + 1] == 'x' || s.src[s.pos + 1] == 'X';
+}
+
+I64 number(As* s) {
+    skip_ws(s);
+    I64 neg = 0;
+    if cur(s) == '-' {
+        neg = 1;
+        s.pos = s.pos + 1;
+    }
+    I64 v = 0;
+    I64 any = 0;
+    if at_hex(s) {
+        s.pos = s.pos + 2;
+        for true {
+            I64 c = cur(s);
+            I64 d = -1;
+            if c >= '0' && c <= '9' {
+                d = c - '0';
+            } else if c >= 'a' && c <= 'f' {
+                d = c - 'a' + 10;
+            } else if c >= 'A' && c <= 'F' {
+                d = c - 'A' + 10;
+            } else {
+                break;
+            }
+            v = v * 16 + d;
+            any = 1;
+            s.pos = s.pos + 1;
+        }
+        if any == 0 {
+            aerr(s, "expected hex digits after 0x");
+        }
+        if neg == 1 {
+            return -v;
+        }
+        return v;
+    }
+    for true {
+        I64 c = cur(s);
+        if c < '0' || c > '9' {
+            break;
+        }
+        v = v * 10 + (c - '0');
+        any = 1;
+        s.pos = s.pos + 1;
+    }
+    if any == 0 {
+        aerr(s, "expected a number");
+    }
+    if neg == 1 {
+        return -v;
+    }
+    return v;
+}
+
+U0 op_clear(Op* o) {
+    o.kind = 0;
+    o.reg = -1;
+    o.size = 8;
+    o.base = -1;
+    o.idx = -1;
+    o.scale = 1;
+    o.disp = 0;
+    o.noff = 0;
+    o.nlen = 0;
+    o.imm = 0;
+}
+
+I64 reg_lookup(As* s, I64 off, I64 len, Op* o) {
+    U8* nm = aname(s, off, len);
+    if len == 4 && nm[0] == 'x' && nm[1] == 'm' && nm[2] == 'm' && nm[3] >= '0' && nm[3] <= '7' {
+        o.size = 8;
+        return 16 + (nm[3] as I64) - '0';
+    }
+    U8* up = heap.alloc(len + 1);
+    for I64 i = 0; i < len; i++ {
+        I64 c = nm[i] as I64;
+        if c >= 'a' && c <= 'z' {
+            c = c - 'a' + 'A';
+        }
+        up[i] = c as U8;
+    }
+    I64 r = x86.reg(up[0 : len]);
+    if r < 0 {
+        return -1;
+    }
+    o.size = isa.reg_size(r);
+    return isa.reg_idx(r);
+}
+
+U0 parse_mem(As* s, Op* o) {
+    o.kind = OPR_MEM;
+    skip_ws(s);
+    if eat(s, "[") == false {
+        aerr(s, "expected '['");
+    }
+    skip_ws(s);
+    I64 st = word_start(s);
+    I64 ln = word_len(s);
+    if ln == 3 && s.src[st] == 'r' && s.src[st + 1] == 'i' && s.src[st + 2] == 'p' {
+        o.kind = OPR_RIP;
+        skip_ws(s);
+        if eat(s, "+") == false {
+            aerr(s, "expected '+' after rip");
+        }
+        o.noff = word_start(s);
+        o.nlen = word_len(s);
+        skip_ws(s);
+        if eat(s, "]") == false {
+            aerr(s, "expected ']'");
+        }
+        return;
+    }
+    o.base = reg_lookup(s, st, ln, o);
+    if o.base < 0 {
+        if s.bits == 16 {
+            if s.src[st] >= '0' && s.src[st] <= '9' {
+                s.pos = st;
+                o.disp = number(s);
+            } else {
+                o.noff = st;
+                o.nlen = ln;
+            }
+            skip_ws(s);
+            if eat(s, "]") == false {
+                aerr(s, "expected ']'");
+            }
+            return;
+        }
+        aerr(s, "expected a base register");
+    }
+    for true {
+        skip_ws(s);
+        if eat(s, "]") {
+            return;
+        }
+        I64 sign = 1;
+        if eat(s, "+") {
+            sign = 1;
+        } else if eat(s, "-") {
+            sign = -1;
+        } else {
+            aerr(s, "expected '+', '-' or ']'");
+        }
+        skip_ws(s);
+        I64 c = cur(s);
+        if c >= '0' && c <= '9' {
+            o.disp = o.disp + sign * number(s);
+        } else {
+            I64 rst = word_start(s);
+            I64 rln = word_len(s);
+            Op tmp = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+            I64 ri = reg_lookup(s, rst, rln, &tmp);
+            if ri < 0 {
+                aerr(s, "expected an index register");
+            }
+            o.idx = ri;
+            skip_ws(s);
+            if eat(s, "*") {
+                o.scale = number(s);
+            }
+        }
+    }
+}
+
+Bool eat_sizeword(As* s, Op* o) {
+    if eat(s, "qword ptr") {
+        o.size = 8;
+        return true;
+    }
+    if eat(s, "dword ptr") {
+        o.size = 4;
+        return true;
+    }
+    if eat(s, "word ptr") {
+        o.size = 2;
+        return true;
+    }
+    if eat(s, "byte ptr") {
+        o.size = 1;
+        return true;
+    }
+    return false;
+}
+
+Bool at_mem(As* s) {
+    I64 save = s.pos;
+    Op tmp = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    eat_sizeword(s, &tmp);
+    skip_ws(s);
+    Bool r = cur(s) == '[';
+    s.pos = save;
+    return r;
+}
+
+U0 parse_operand(As* s, Op* o, Bool labelform) {
+    op_clear(o);
+    skip_ws(s);
+    I64 sized = 0;
+    if eat_sizeword(s, o) {
+        sized = o.size;
+    }
+    skip_ws(s);
+    I64 c = cur(s);
+    if c == '[' {
+        I64 keep = o.size;
+        parse_mem(s, o);
+        if sized != 0 {
+            o.size = keep;
+        }
+        return;
+    }
+    if c == '\'' {
+        s.pos = s.pos + 1;
+        o.kind = OPR_IMM;
+        o.imm = cur(s);
+        s.pos = s.pos + 1;
+        if cur(s) == '\'' {
+            s.pos = s.pos + 1;
+        }
+        return;
+    }
+    if c == '-' || (c >= '0' && c <= '9') {
+        o.kind = OPR_IMM;
+        o.imm = number(s);
+        return;
+    }
+    I64 st = word_start(s);
+    I64 ln = word_len(s);
+    if labelform {
+        I64 lr = reg_lookup(s, st, ln, o);
+        if lr >= 0 {
+            o.kind = OPR_REG;
+            o.reg = lr;
+            return;
+        }
+        o.kind = OPR_LBL;
+        o.noff = st;
+        o.nlen = ln;
+        return;
+    }
+    I64 r = reg_lookup(s, st, ln, o);
+    if r >= 0 {
+        o.kind = OPR_REG;
+        o.reg = r;
+        return;
+    }
+    o.kind = OPR_LBL;
+    o.noff = st;
+    o.nlen = ln;
+}
+
+Bool fits8(I64 v) {
+    return v >= -128 && v <= 127;
+}
+
+U0 rex(As* s, I64 w, I64 r, I64 x, I64 b) {
+    I64 v = x86.OPC_REX + w * 8 + r * 4 + x * 2 + b;
+    if v != x86.OPC_REX {
+        emit8(s, v);
+    }
+}
+
+U0 rex_forced(As* s, I64 w, I64 r, I64 x, I64 b, Bool force) {
+    I64 v = x86.OPC_REX + w * 8 + r * 4 + x * 2 + b;
+    if v != x86.OPC_REX || force {
+        emit8(s, v);
+    }
+}
+
+U0 modrm(As* s, I64 mod, I64 reg, I64 rm) {
+    emit8(s, mod * 64 + (reg % 8) * 8 + (rm % 8));
+}
+
+U0 emit_rm(As* s, Op* m, I64 reg) {
+    if m.kind == OPR_REG {
+        modrm(s, 3, reg, m.reg);
+        return;
+    }
+    if m.kind == OPR_RIP {
+        modrm(s, 0, reg, 5);
+        if s.src[m.noff] == '.' {
+            I64 tsec = 0;
+            I64 toff = 0;
+            if s.pass == 2 {
+                I64 i = sym_find(s, m.noff, m.nlen);
+                if i < 0 {
+                    aerr(s, "undefined local label");
+                }
+                tsec = s.ssec[i];
+                toff = s.soff[i];
+            }
+            mark_rel_sec(s, tsec, toff);
+        } else {
+            mark_rel_name(s, m.noff, m.nlen);
+        }
+        emit32(s, 0);
+        return;
+    }
+    I64 mod = 2;
+    if m.disp == 0 && (m.base % 8) != 5 {
+        mod = 0;
+    } else if fits8(m.disp) {
+        mod = 1;
+    }
+    Bool sib = m.idx >= 0 || (m.base % 8) == 4;
+    if sib {
+        modrm(s, mod, reg, 4);
+        I64 ss = 0;
+        if m.scale == 2 {
+            ss = 1;
+        } else if m.scale == 4 {
+            ss = 2;
+        } else if m.scale == 8 {
+            ss = 3;
+        } else if m.scale != 1 {
+            aerr(s, "an index scale must be 1, 2, 4 or 8");
+        }
+        I64 index = 4;
+        if m.idx >= 0 {
+            index = m.idx;
+        }
+        emit8(s, ss * 64 + (index % 8) * 8 + (m.base % 8));
+    } else {
+        modrm(s, mod, reg, m.base);
+    }
+    if mod == 1 {
+        emit8(s, m.disp & 255);
+    } else if mod == 2 {
+        emit32(s, m.disp);
+    }
+}
+
+I64 rm_x(Op* m) {
+    if m.idx >= 8 {
+        return 1;
+    }
+    return 0;
+}
+
+I64 rm_b(Op* m) {
+    if m.kind == OPR_REG {
+        if m.reg >= 8 {
+            return 1;
+        }
+        return 0;
+    }
+    if m.kind == OPR_RIP {
+        return 0;
+    }
+    if m.base >= 8 {
+        return 1;
+    }
+    return 0;
+}
+
+Bool byte_reg_needs_rex(Op* o) {
+    if o.kind != OPR_REG || o.size != 1 {
+        return false;
+    }
+    return o.reg >= 4;
+}
+
+U0 pfx(As* s, Op* rm, Op* r, I64 size) {
+    if size == 2 {
+        emit8(s, x86.OPC_PFX_16);
+    }
+    I64 w = 0;
+    if size == 8 {
+        w = 1;
+    }
+    I64 rr = 0;
+    if r.kind == OPR_REG && r.reg >= 8 {
+        rr = 1;
+    }
+    Bool force = false;
+    if size == 1 {
+        if byte_reg_needs_rex(rm) {
+            force = true;
+        }
+        if byte_reg_needs_rex(r) {
+            force = true;
+        }
+    }
+    rex_forced(s, w, rr, rm_x(rm), rm_b(rm), force);
+}
+
+U0 enc_rr(As* s, I64 opcode, Op* rm, Op* r, I64 size) {
+    pfx(s, rm, r, size);
+    I64 op = opcode;
+    if size == 1 {
+        op = opcode - 1;
+    }
+    emit8(s, op);
+    emit_rm(s, rm, r.reg);
+}
+
+U0 enc_grp1(As* s, I64 ext, Op* rm, I64 imm, I64 size) {
+    pfx(s, rm, s.none, size);
+    if size == 1 {
+        emit8(s, x86.OPC_GRP1_I32 - 1);
+        emit_rm(s, rm, ext);
+        emit8(s, imm & 255);
+        return;
+    }
+    if fits8(imm) {
+        emit8(s, x86.OPC_GRP1_I8);
+        emit_rm(s, rm, ext);
+        emit8(s, imm & 255);
+        return;
+    }
+    emit8(s, x86.OPC_GRP1_I32);
+    emit_rm(s, rm, ext);
+    emit32(s, imm);
+}
+
+U0 emit_rel32(As* s, Op* o) {
+    Bool local = s.src[o.noff] == '.';
+    if s.flat {
+        local = true;
+    }
+    if local == false {
+        mark_rel_name(s, o.noff, o.nlen);
+        emit32(s, 0);
+        return;
+    }
+    I64 target = 0;
+    if s.pass == 2 {
+        I64 i = sym_find(s, o.noff, o.nlen);
+        if i < 0 {
+            aerr(s, "undefined local label");
+        }
+        target = s.soff[i];
+    }
+    emit32(s, target - (s.tlen + 4));
+}
+
+I64 sym_addr(As* s, I64 noff, I64 nlen) {
+    if s.pass != 2 {
+        return 0;
+    }
+    I64 i = sym_find(s, noff, nlen);
+    if i < 0 {
+        aerr(s, "undefined label");
+    }
+    return s.org + s.soff[i];
+}
+
+U0 emit_rel16(As* s, Op* o) {
+    I64 target = sym_addr(s, o.noff, o.nlen);
+    emit16(s, target - (s.org + here(s) + 2));
+}
+
+U0 emit_rm16(As* s, Op* m, I64 reg) {
+    if m.kind == OPR_REG {
+        modrm(s, 3, reg, m.reg);
+        return;
+    }
+    if m.base < 0 {
+        I64 addr = m.disp;
+        if m.nlen > 0 {
+            addr = sym_addr(s, m.noff, m.nlen) + m.disp;
+        }
+        modrm(s, 0, reg, 6);
+        emit16(s, addr);
+        return;
+    }
+    I64 rm = -1;
+    if m.base == 6 {
+        rm = 4;
+    } else if m.base == 7 {
+        rm = 5;
+    } else if m.base == 3 {
+        rm = 7;
+    } else {
+        aerr(s, "16-bit addressing takes [si], [di], [bx] or an address");
+    }
+    if m.disp == 0 {
+        modrm(s, 0, reg, rm);
+    } else if fits8(m.disp) {
+        modrm(s, 1, reg, rm);
+        emit8(s, m.disp & 255);
+    } else {
+        modrm(s, 2, reg, rm);
+        emit16(s, m.disp);
+    }
+}
+
+I64 sreg_idx(As* s, Op* o) {
+    if o.kind != OPR_LBL {
+        return -1;
+    }
+    U8* n = aname(s, o.noff, o.nlen);
+    if str.eq(n, "es") {
+        return 0;
+    }
+    if str.eq(n, "cs") {
+        return 1;
+    }
+    if str.eq(n, "ss") {
+        return 2;
+    }
+    if str.eq(n, "ds") {
+        return 3;
+    }
+    if str.eq(n, "fs") {
+        return 4;
+    }
+    if str.eq(n, "gs") {
+        return 5;
+    }
+    return -1;
+}
+
+I64 creg_idx(As* s, Op* o) {
+    if o.kind != OPR_LBL {
+        return -1;
+    }
+    U8* n = aname(s, o.noff, o.nlen);
+    if str.eq(n, "cr0") {
+        return 0;
+    }
+    if str.eq(n, "cr2") {
+        return 2;
+    }
+    if str.eq(n, "cr3") {
+        return 3;
+    }
+    if str.eq(n, "cr4") {
+        return 4;
+    }
+    return -1;
+}
+
+I64 arith16(U8* m) {
+    if str.eq(m, "add") {
+        return 0 * 256 + 0x01;
+    }
+    if str.eq(m, "or") {
+        return 1 * 256 + 0x09;
+    }
+    if str.eq(m, "and") {
+        return 4 * 256 + 0x21;
+    }
+    if str.eq(m, "sub") {
+        return 5 * 256 + 0x29;
+    }
+    if str.eq(m, "xor") {
+        return 6 * 256 + 0x31;
+    }
+    if str.eq(m, "cmp") {
+        return 7 * 256 + 0x39;
+    }
+    return -1;
+}
+
+U0 lbl_imm(As* s, Op* o) {
+    if o.kind == OPR_LBL {
+        o.imm = sym_addr(s, o.noff, o.nlen);
+        o.kind = OPR_IMM;
+    }
+}
+
+U0 osize(As* s, I64 size) {
+    if size == 4 {
+        emit8(s, x86.OPC_PFX_16);
+    }
+}
+
+U0 need_reg16(As* s, Op* o) {
+    if o.kind != OPR_REG || o.size != 2 || o.reg >= 8 {
+        aerr(s, "expected a 16-bit register");
+    }
+}
+
+U0 encode16(As* s, U8* m, I64 nops) {
+    Op* a = s.a;
+    Op* b = s.b;
+
+    if nops == 0 {
+        if str.eq(m, "cli") {
+            emit8(s, 0xfa);
+            return;
+        }
+        if str.eq(m, "sti") {
+            emit8(s, 0xfb);
+            return;
+        }
+        if str.eq(m, "cld") {
+            emit8(s, 0xfc);
+            return;
+        }
+        if str.eq(m, "std") {
+            emit8(s, 0xfd);
+            return;
+        }
+        if str.eq(m, "hlt") {
+            emit8(s, 0xf4);
+            return;
+        }
+        if str.eq(m, "nop") {
+            emit8(s, 0x90);
+            return;
+        }
+        if str.eq(m, "ret") {
+            emit8(s, 0xc3);
+            return;
+        }
+        if str.eq(m, "iret") {
+            emit8(s, 0xcf);
+            return;
+        }
+        if str.eq(m, "wrmsr") {
+            emit8(s, 0x0f);
+            emit8(s, 0x30);
+            return;
+        }
+        if str.eq(m, "rdmsr") {
+            emit8(s, 0x0f);
+            emit8(s, 0x32);
+            return;
+        }
+        if str.eq(m, "cpuid") {
+            emit8(s, 0x0f);
+            emit8(s, 0xa2);
+            return;
+        }
+        if str.eq(m, "movsb") {
+            emit8(s, 0xa4);
+            return;
+        }
+        if str.eq(m, "movsw") {
+            emit8(s, 0xa5);
+            return;
+        }
+        if str.eq(m, "movsd") {
+            emit8(s, 0x66);
+            emit8(s, 0xa5);
+            return;
+        }
+        if str.eq(m, "stosb") {
+            emit8(s, 0xaa);
+            return;
+        }
+        if str.eq(m, "stosw") {
+            emit8(s, 0xab);
+            return;
+        }
+        if str.eq(m, "stosd") {
+            emit8(s, 0x66);
+            emit8(s, 0xab);
+            return;
+        }
+        if str.eq(m, "lodsb") {
+            emit8(s, 0xac);
+            return;
+        }
+        if str.eq(m, "lodsw") {
+            emit8(s, 0xad);
+            return;
+        }
+        aerr(s, "not in the 16-bit menu");
+    }
+
+    if nops == 1 {
+        if a.kind == OPR_IMM && (str.eq(m, "jmp") || str.eq(m, "call")) {
+            if str.eq(m, "jmp") {
+                emit8(s, 0xe9);
+            } else {
+                emit8(s, 0xe8);
+            }
+            emit16(s, a.imm - (s.org + here(s) + 2));
+            return;
+        }
+        if str.eq(m, "jmp") {
+            emit8(s, 0xe9);
+            emit_rel16(s, a);
+            return;
+        }
+        if str.eq(m, "call") {
+            emit8(s, 0xe8);
+            emit_rel16(s, a);
+            return;
+        }
+        I64 cc = x86.jcc_code(m);
+        if cc >= 0 {
+            emit8(s, x86.OPC_TWOBYTE);
+            emit8(s, 0x80 + cc);
+            emit_rel16(s, a);
+            return;
+        }
+        if str.eq(m, "int") {
+            emit8(s, 0xcd);
+            emit8(s, a.imm & 255);
+            return;
+        }
+        if str.eq(m, "push") {
+            need_reg16(s, a);
+            emit8(s, 0x50 + a.reg);
+            return;
+        }
+        if str.eq(m, "pop") {
+            need_reg16(s, a);
+            emit8(s, 0x58 + a.reg);
+            return;
+        }
+        if str.eq(m, "inc") {
+            need_reg16(s, a);
+            emit8(s, 0x40 + a.reg);
+            return;
+        }
+        if str.eq(m, "dec") {
+            need_reg16(s, a);
+            emit8(s, 0x48 + a.reg);
+            return;
+        }
+        if str.eq(m, "lgdt") {
+            emit8(s, x86.OPC_TWOBYTE); emit8(s, 0x01); emit_rm16(s, a, 2);
+            return;
+        }
+        if str.eq(m, "lidt") {
+            emit8(s, x86.OPC_TWOBYTE); emit8(s, 0x01); emit_rm16(s, a, 3);
+            return;
+        }
+        aerr(s, "not in the 16-bit menu");
+    }
+
+    if str.eq(m, "jmpf") {
+        emit8(s, 0xea);
+        lbl_imm(s, b);
+        emit16(s, b.imm);
+        emit16(s, a.imm);
+        return;
+    }
+    if a.kind == OPR_MEM && a.size == 8 {
+        aerr(s, "this memory operand needs a size word");
+    }
+    if b.kind == OPR_MEM && b.size == 8 {
+        aerr(s, "this memory operand needs a size word");
+    }
+
+    if str.eq(m, "mov") {
+        I64 sd = sreg_idx(s, a);
+        if sd >= 0 {
+            emit8(s, 0x8e);
+            emit_rm16(s, b, sd);
+            return;
+        }
+        I64 ssrc = sreg_idx(s, b);
+        if ssrc >= 0 {
+            emit8(s, 0x8c);
+            emit_rm16(s, a, ssrc);
+            return;
+        }
+        I64 cd = creg_idx(s, a);
+        if cd >= 0 {
+            emit8(s, x86.OPC_TWOBYTE); emit8(s, 0x22); modrm(s, 3, cd, b.reg);
+            return;
+        }
+        I64 csrc = creg_idx(s, b);
+        if csrc >= 0 {
+            emit8(s, x86.OPC_TWOBYTE); emit8(s, 0x20); modrm(s, 3, csrc, a.reg);
+            return;
+        }
+        lbl_imm(s, b);
+        if b.kind == OPR_IMM {
+            if a.kind == OPR_REG {
+                if a.size == 1 {
+                    emit8(s, 0xb0 + a.reg);
+                    emit8(s, b.imm & 255);
+                    return;
+                }
+                osize(s, a.size);
+                emit8(s, 0xb8 + a.reg);
+                if a.size == 4 {
+                    emit32(s, b.imm);
+                } else {
+                    emit16(s, b.imm);
+                }
+                return;
+            }
+            if a.size == 1 {
+                emit8(s, 0xc6); emit_rm16(s, a, 0); emit8(s, b.imm & 255);
+                return;
+            }
+            osize(s, a.size);
+            emit8(s, 0xc7);
+            emit_rm16(s, a, 0);
+            if a.size == 4 {
+                emit32(s, b.imm);
+            } else {
+                emit16(s, b.imm);
+            }
+            return;
+        }
+        if b.kind == OPR_REG {
+            osize(s, b.size);
+            if b.size == 1 {
+                emit8(s, 0x88);
+            } else {
+                emit8(s, 0x89);
+            }
+            emit_rm16(s, a, b.reg);
+            return;
+        }
+        if a.kind == OPR_REG {
+            osize(s, a.size);
+            if a.size == 1 {
+                emit8(s, 0x8a);
+            } else {
+                emit8(s, 0x8b);
+            }
+            emit_rm16(s, b, a.reg);
+            return;
+        }
+        aerr(s, "not in the 16-bit menu");
+    }
+
+    if str.eq(m, "in") {
+        if b.kind == OPR_IMM {
+            if a.size == 1 {
+                emit8(s, 0xe4);
+            } else {
+                emit8(s, 0xe5);
+            }
+            emit8(s, b.imm & 255);
+            return;
+        }
+        if a.size == 1 {
+            emit8(s, 0xec);
+        } else {
+            emit8(s, 0xed);
+        }
+        return;
+    }
+    if str.eq(m, "out") {
+        if a.kind == OPR_IMM {
+            if b.size == 1 {
+                emit8(s, 0xe6);
+            } else {
+                emit8(s, 0xe7);
+            }
+            emit8(s, a.imm & 255);
+            return;
+        }
+        if b.size == 1 {
+            emit8(s, 0xee);
+        } else {
+            emit8(s, 0xef);
+        }
+        return;
+    }
+    if str.eq(m, "test") {
+        if b.kind == OPR_IMM {
+            osize(s, a.size);
+            if a.size == 1 {
+                emit8(s, 0xf6);
+            } else {
+                emit8(s, 0xf7);
+            }
+            emit_rm16(s, a, 0);
+            if a.size == 1 {
+                emit8(s, b.imm & 255);
+            } else if a.size == 4 {
+                emit32(s, b.imm);
+            } else {
+                emit16(s, b.imm);
+            }
+            return;
+        }
+        osize(s, b.size);
+        if b.size == 1 {
+            emit8(s, 0x84);
+        } else {
+            emit8(s, 0x85);
+        }
+        emit_rm16(s, a, b.reg);
+        return;
+    }
+    I64 sh = -1;
+    if str.eq(m, "shl") {
+        sh = 4;
+    } else if str.eq(m, "shr") {
+        sh = 5;
+    } else if str.eq(m, "sar") {
+        sh = 7;
+    }
+    if sh >= 0 {
+        osize(s, a.size);
+        if a.size == 1 {
+            emit8(s, 0xc0);
+        } else {
+            emit8(s, 0xc1);
+        }
+        emit_rm16(s, a, sh);
+        emit8(s, b.imm & 255);
+        return;
+    }
+
+    I64 ar = arith16(m);
+    if ar >= 0 {
+        I64 ext = ar / 256;
+        I64 opc = ar % 256;
+        lbl_imm(s, b);
+        if b.kind == OPR_IMM {
+            osize(s, a.size);
+            if a.size == 1 {
+                emit8(s, 0x80); emit_rm16(s, a, ext); emit8(s, b.imm & 255);
+                return;
+            }
+            if fits8(b.imm) {
+                emit8(s, 0x83); emit_rm16(s, a, ext); emit8(s, b.imm & 255);
+                return;
+            }
+            emit8(s, 0x81);
+            emit_rm16(s, a, ext);
+            if a.size == 4 {
+                emit32(s, b.imm);
+            } else {
+                emit16(s, b.imm);
+            }
+            return;
+        }
+        if b.kind == OPR_REG {
+            osize(s, b.size);
+            if b.size == 1 {
+                emit8(s, opc - 1);
+            } else {
+                emit8(s, opc);
+            }
+            emit_rm16(s, a, b.reg);
+            return;
+        }
+        if a.kind == OPR_REG {
+            osize(s, a.size);
+            if a.size == 1 {
+                emit8(s, opc + 1);
+            } else {
+                emit8(s, opc + 2);
+            }
+            emit_rm16(s, b, a.reg);
+            return;
+        }
+    }
+    aerr(s, "not in the 16-bit menu");
+}
+
+U0 emit_opc(As* s, I64 ri) {
+    if (x86.flags(ri) & x86.IF_0F) != 0 {
+        emit8(s, x86.OPC_TWOBYTE);
+    }
+    emit8(s, x86.opc(ri));
+}
+
+U0 encode(As* s, U8* m, I64 nops) {
+    Op* a = s.a;
+    Op* b = s.b;
+
+    if nops == 2 && a.kind == OPR_REG && b.kind == OPR_REG && (a.reg >= 16 || b.reg >= 16) {
+        if str.eq(m, "movq") {
+            emit8(s, 0x66);
+            emit8(s, 0x48);
+            emit8(s, 0x0f);
+            if a.reg >= 16 {
+                emit8(s, 0x6e);
+                emit8(s, 0xc0 + (a.reg - 16) * 8 + b.reg);
+            } else {
+                emit8(s, 0x7e);
+                emit8(s, 0xc0 + (b.reg - 16) * 8 + a.reg);
+            }
+            return;
+        }
+        if str.eq(m, "cvtsi2sd") {
+            emit8(s, 0xf2);
+            emit8(s, 0x48);
+            emit8(s, 0x0f);
+            emit8(s, 0x2a);
+            emit8(s, 0xc0 + (a.reg - 16) * 8 + b.reg);
+            return;
+        }
+        if str.eq(m, "cvttsd2si") {
+            emit8(s, 0xf2);
+            emit8(s, 0x48);
+            emit8(s, 0x0f);
+            emit8(s, 0x2c);
+            emit8(s, 0xc0 + a.reg * 8 + (b.reg - 16));
+            return;
+        }
+        I64 sop = -1;
+        I64 simm = -1;
+        if str.eq(m, "addsd") { sop = 0x58; }
+        if str.eq(m, "subsd") { sop = 0x5c; }
+        if str.eq(m, "mulsd") { sop = 0x59; }
+        if str.eq(m, "divsd") { sop = 0x5e; }
+        if str.eq(m, "cmpeqsd") { sop = 0xc2; simm = 0; }
+        if str.eq(m, "cmpltsd") { sop = 0xc2; simm = 1; }
+        if str.eq(m, "cmplesd") { sop = 0xc2; simm = 2; }
+        if str.eq(m, "cmpneqsd") { sop = 0xc2; simm = 4; }
+        if sop >= 0 {
+            emit8(s, 0xf2);
+            emit8(s, 0x0f);
+            emit8(s, sop);
+            emit8(s, 0xc0 + (a.reg - 16) * 8 + (b.reg - 16));
+            if simm >= 0 {
+                emit8(s, simm);
+            }
+            return;
+        }
+        aerr(s, "not in the instruction menu (mnemonics are uppercase)");
+    }
+
+    if nops == 0 {
+        I64 ri = x86.find(m, x86.F_NONE);
+        if ri < 0 {
+            aerr(s, "unknown instruction with no operands");
+        }
+        if (x86.flags(ri) & x86.IF_W) != 0 {
+            emit8(s, x86.OPC_REX_W);
+        }
+        emit_opc(s, ri);
+        return;
+    }
+
+    if nops == 1 {
+        I64 cc = x86.jcc_code(m);
+        if cc >= 0 {
+            I64 ri = x86.find("j", x86.F_JCC);
+            emit8(s, x86.OPC_TWOBYTE);
+            emit8(s, x86.ext(ri) + cc);
+            emit_rel32(s, a);
+            return;
+        }
+        I64 sc = x86.setcc_code(m);
+        if sc >= 0 {
+            I64 ri = x86.find("set", x86.F_SETCC);
+            pfx(s, a, s.none, 1);
+            emit8(s, x86.OPC_TWOBYTE);
+            emit8(s, x86.opc(ri) + sc);
+            emit_rm(s, a, 0);
+            return;
+        }
+        I64 ri = x86.find(m, x86.F_JMP);
+        if ri >= 0 {
+            if a.kind == OPR_MEM || a.kind == OPR_REG {
+                rex(s, 0, 0, rm_x(a), rm_b(a));
+                emit8(s, 0xff);
+                emit_rm(s, a, 4);
+                return;
+            }
+            emit8(s, x86.ext(ri));
+            emit_rel32(s, a);
+            return;
+        }
+        ri = x86.find(m, x86.F_REL);
+        if ri >= 0 {
+            if a.kind == OPR_REG {
+                if a.reg >= 8 {
+                    emit8(s, x86.OPC_REX_B);
+                }
+                emit8(s, 0xff);
+                modrm(s, 3, 2, a.reg);
+                return;
+            }
+            emit_opc(s, ri);
+            emit_rel32(s, a);
+            return;
+        }
+        ri = x86.find(m, x86.F_PLUSR);
+        if ri >= 0 {
+            if a.kind == OPR_IMM {
+                if fits8(a.imm) {
+                    emit8(s, x86.OPC_PUSH_I8);
+                    emit8(s, a.imm & 255);
+                } else {
+                    emit8(s, x86.OPC_PUSH_I32);
+                    emit32(s, a.imm);
+                }
+                return;
+            }
+            if a.reg >= 8 {
+                emit8(s, x86.OPC_REX_B);
+            }
+            emit8(s, x86.opc(ri) + (a.reg % 8));
+            return;
+        }
+        ri = x86.find(m, x86.F_M);
+        if ri >= 0 {
+            pfx(s, a, s.none, a.size);
+            emit_opc(s, ri);
+            emit_rm(s, a, x86.ext(ri));
+            return;
+        }
+        aerr(s, "unknown instruction with one operand");
+    }
+
+    if str.eq(m, "in") || str.eq(m, "out") {
+        Op* data = a;
+        Op* port = b;
+        if str.eq(m, "out") {
+            data = b;
+            port = a;
+        }
+        if port.kind != OPR_REG || port.reg != 2 || port.size != 2 {
+            aerr(s, "in and out take the port in dx");
+        }
+        if data.kind != OPR_REG || data.reg != 0 {
+            aerr(s, "in and out take the data in the accumulator");
+        }
+        if data.size == 2 {
+            emit8(s, x86.OPC_PFX_16);
+        }
+        I64 op = 0xec;
+        if str.eq(m, "out") {
+            op = 0xee;
+        }
+        if data.size != 1 {
+            op = op + 1;
+        }
+        emit8(s, op);
+        return;
+    }
+
+    I64 sh = x86.find(m, x86.F_SHIFT);
+    if sh >= 0 {
+        pfx(s, a, s.none, a.size);
+        I64 op = x86.OPC_SHIFT_I;
+        if b.kind != OPR_IMM {
+            op = x86.opc(sh);
+        }
+        if a.size == 1 {
+            op = op - 1;
+        }
+        emit8(s, op);
+        emit_rm(s, a, x86.ext(sh));
+        if b.kind == OPR_IMM {
+            emit8(s, b.imm & 255);
+        }
+        return;
+    }
+    if b.kind == OPR_IMM {
+        I64 ri = x86.find(m, x86.F_MOV_RI);
+        if ri >= 0 && a.kind == OPR_REG && a.size == 4 {
+            if a.reg >= 8 {
+                emit8(s, x86.OPC_REX_B);
+            }
+            emit8(s, x86.opc(ri) + (a.reg % 8));
+            emit32(s, b.imm);
+            return;
+        }
+        ri = x86.find(m, x86.F_MOVABS);
+        if ri >= 0 {
+            if a.reg >= 8 {
+                emit8(s, x86.OPC_REX_W + 1);
+            } else {
+                emit8(s, x86.OPC_REX_W);
+            }
+            emit8(s, x86.opc(ri) + (a.reg % 8));
+            emit64(s, b.imm);
+            return;
+        }
+        ri = x86.find(m, x86.F_IMUL_I);
+        if ri >= 0 {
+            pfx(s, a, a, a.size);
+            if fits8(b.imm) {
+                emit8(s, x86.OPC_IMUL_I8);
+                emit_rm(s, a, a.reg);
+                emit8(s, b.imm & 255);
+            } else {
+                emit8(s, x86.opc(ri));
+                emit_rm(s, a, a.reg);
+                emit32(s, b.imm);
+            }
+            return;
+        }
+        ri = x86.find(m, x86.F_RM_I);
+        if ri < 0 {
+            aerr(s, "this instruction takes no immediate");
+        }
+        pfx(s, a, s.none, a.size);
+        if x86.opc(ri) == x86.OPC_GRP1_I32 {
+            if a.size == 1 {
+                emit8(s, x86.opc(ri) - 1);
+                emit_rm(s, a, x86.ext(ri));
+                emit8(s, b.imm & 255);
+                return;
+            }
+            if fits8(b.imm) {
+                emit8(s, x86.OPC_GRP1_I8);
+                emit_rm(s, a, x86.ext(ri));
+                emit8(s, b.imm & 255);
+                return;
+            }
+        }
+        if a.size == 1 {
+            emit8(s, x86.opc(ri) - 1);
+        } else {
+            emit8(s, x86.opc(ri));
+        }
+        emit_rm(s, a, x86.ext(ri));
+        if a.size == 1 {
+            emit8(s, b.imm & 255);
+        } else if a.size == 2 {
+            emit8(s, b.imm & 255);
+            emit8(s, (b.imm >> 8) & 255);
+        } else {
+            emit32(s, b.imm);
+        }
+        return;
+    }
+
+    if a.kind == OPR_REG && b.kind != OPR_REG {
+        I64 ri = x86.find(m, x86.F_R_RM);
+        if ri >= 0 {
+            I64 op = x86.opc(ri);
+            if str.eq(m, "movzx") || str.eq(m, "movsx") {
+                if b.size == 2 {
+                    op = op + 1;
+                }
+            }
+            I64 sz = a.size;
+            if str.eq(m, "movsxd") {
+                sz = 8;
+            }
+            pfx(s, b, a, sz);
+            if (x86.flags(ri) & x86.IF_0F) != 0 {
+                emit8(s, x86.OPC_TWOBYTE);
+            }
+            emit8(s, op);
+            emit_rm(s, b, a.reg);
+            return;
+        }
+    }
+    I64 ri = x86.find(m, x86.F_RM_R);
+    if ri >= 0 {
+        pfx(s, a, b, b.size);
+        if b.size == 1 {
+            emit8(s, x86.opc(ri) - 1);
+        } else {
+            emit8(s, x86.opc(ri));
+        }
+        emit_rm(s, a, b.reg);
+        return;
+    }
+    ri = x86.find(m, x86.F_R_RM);
+    if ri >= 0 {
+        pfx(s, b, a, a.size);
+        if (x86.flags(ri) & x86.IF_0F) != 0 {
+            emit8(s, x86.OPC_TWOBYTE);
+        }
+        emit8(s, x86.opc(ri));
+        emit_rm(s, b, a.reg);
+        return;
+    }
+    aerr(s, "unknown instruction");
+}
+
+I64 label_off(As* s, U8* name) {
+    for I64 i = 0; i < s.nsym; i++ {
+        if s.snlen[i] == name.len {
+            if str.eq(aname(s, s.snoff[i], s.snlen[i]), name) {
+                return s.soff[i];
+            }
+        }
+    }
+    return -1;
+}
+
+I64 data_word(As* s) {
+    skip_ws(s);
+    I64 c = cur(s);
+    if c == '-' || (c >= '0' && c <= '9') {
+        return number(s);
+    }
+    if s.flat == false {
+        aerr(s, "a label here needs .org to give it an address");
+    }
+    I64 lo = word_start(s);
+    I64 ll = word_len(s);
+    return sym_addr(s, lo, ll);
+}
+
+const I64 RK_B26  = 26;
+const I64 RK_B19  = 19;
+const I64 RK_PG21 = 21;
+const I64 RK_LO12 = 12;
+
+U0 mark_kind(As* s, I64 kind, I64 noff, I64 nlen) {
+    if s.pass != 2 {
+        return;
+    }
+    s.rel[s.nrel] = here(s);
+    s.rwhere[s.nrel] = s.sec;
+    s.rwide[s.nrel] = kind;
+    if s.src[noff] == '.' {
+        I64 i = sym_find(s, noff, nlen);
+        if i < 0 {
+            aerr(s, "undefined local label");
+        }
+        s.rsec[s.nrel] = s.ssec[i];
+        s.roff[s.nrel] = s.soff[i];
+    } else {
+        s.rsec[s.nrel] = -1;
+        s.rnoff[s.nrel] = blob_put(s, noff, nlen);
+        s.rnlen[s.nrel] = nlen;
+    }
+    s.nrel = s.nrel + 1;
+}
+
+U0 or32(As* s, I64 sec, I64 off, I64 bits) {
+    I64 v = 0;
+    for I64 i = 0; i < 4; i++ {
+        I64 byte = 0;
+        if sec == 0 {
+            byte = s.text[off + i] as I64;
+        } else if sec == 1 {
+            byte = s.rodata[off + i] as I64;
+        } else {
+            byte = s.data[off + i] as I64;
+        }
+        v = v | (byte << (i * 8));
+    }
+    patch(s, sec, off, v | bits, 4);
+}
+
+I64 a64_fieldbits(I64 kind, I64 target, I64 field) {
+    if kind == RK_B26 {
+        return ((target - field) / 4) & 0x3ffffff;
+    }
+    if kind == RK_B19 {
+        return (((target - field) / 4) & 0x7ffff) << 5;
+    }
+    if kind == RK_PG21 {
+        I64 pages = (target >> 12) - (field >> 12);
+        return ((pages & 3) << 29) | (((pages >> 2) & 0x7ffff) << 5);
+    }
+    return (target & 0xfff) << 10;
+}
+
+I64 a64_reg(As* s) {
+    skip_ws(s);
+    I64 st = word_start(s);
+    I64 ln = word_len(s);
+    U8* w = aname(s, st, ln);
+    if str.eq(w, "sp") || str.eq(w, "xzr") {
+        return 31;
+    }
+    if str.eq(w, "wzr") {
+        return 31 | 256;
+    }
+    if ln >= 2 && (w[0] == 'x' || w[0] == 'w') {
+        I64 v = 0;
+        for I64 i = 1; i < ln; i++ {
+            if w[i] < '0' || w[i] > '9' {
+                aerr(s, "bad register");
+            }
+            v = v * 10 + (w[i] as I64) - '0';
+        }
+        if v > 30 {
+            aerr(s, "bad register");
+        }
+        if w[0] == 'w' {
+            return v | 256;
+        }
+        return v;
+    }
+    aerr(s, "expected a register");
+    return 0;
+}
+
+U0 a64_comma(As* s) {
+    skip_ws(s);
+    if cur(s) != ',' {
+        aerr(s, "expected a comma");
+    }
+    s.pos = s.pos + 1;
+}
+
+I64 a64_imm(As* s) {
+    skip_ws(s);
+    if cur(s) != '#' {
+        aerr(s, "expected #imm");
+    }
+    s.pos = s.pos + 1;
+    return number(s);
+}
+
+I64 a64_lsl(As* s) {
+    skip_ws(s);
+    if cur(s) != ',' {
+        return 0;
+    }
+    s.pos = s.pos + 1;
+    skip_ws(s);
+    I64 st = word_start(s);
+    I64 ln = word_len(s);
+    if str.eq(aname(s, st, ln), "lsl") == false {
+        aerr(s, "expected lsl");
+    }
+    return a64_imm(s);
+}
+
+I64 a64_mem(As* s) {
+    skip_ws(s);
+    if cur(s) != '[' {
+        aerr(s, "expected [");
+    }
+    s.pos = s.pos + 1;
+    I64 rn = a64_reg(s) & 255;
+    I64 off = 0;
+    skip_ws(s);
+    if cur(s) == ',' {
+        s.pos = s.pos + 1;
+        off = a64_imm(s);
+    }
+    skip_ws(s);
+    if cur(s) != ']' {
+        aerr(s, "expected ]");
+    }
+    s.pos = s.pos + 1;
+    I64 mode = 0;
+    skip_ws(s);
+    if cur(s) == '!' {
+        s.pos = s.pos + 1;
+        mode = 1;
+    } else if cur(s) == ',' {
+        s.pos = s.pos + 1;
+        off = a64_imm(s);
+        mode = 2;
+    }
+    return ((off & 0xffff) << 16) | (mode << 8) | rn;
+}
+
+I64 am_rn(I64 m) {
+    return m & 255;
+}
+
+I64 am_mode(I64 m) {
+    return (m >> 8) & 3;
+}
+
+I64 am_off(I64 m) {
+    I64 v = (m >> 16) & 0xffff;
+    if v >= 32768 {
+        return v - 65536;
+    }
+    return v;
+}
+
+I64 a64_cond(As* s, U8* nm) {
+    if str.eq(nm, "eq") { return a64.EQ; }
+    if str.eq(nm, "ne") { return a64.NE; }
+    if str.eq(nm, "cs") { return a64.CS; }
+    if str.eq(nm, "cc") { return a64.CC; }
+    if str.eq(nm, "mi") { return a64.MI; }
+    if str.eq(nm, "pl") { return a64.PL; }
+    if str.eq(nm, "hi") { return a64.HI; }
+    if str.eq(nm, "ls") { return a64.LS; }
+    if str.eq(nm, "ge") { return a64.GE; }
+    if str.eq(nm, "lt") { return a64.LT; }
+    if str.eq(nm, "gt") { return a64.GT; }
+    if str.eq(nm, "le") { return a64.LE; }
+    aerr(s, "unknown condition");
+    return 0;
+}
+
+I64 a64_condw(As* s) {
+    skip_ws(s);
+    I64 st = word_start(s);
+    I64 ln = word_len(s);
+    return a64_cond(s, aname(s, st, ln));
+}
+
+U0 a64_branch(As* s, I64 kind, I64 basew) {
+    skip_ws(s);
+    I64 st = word_start(s);
+    I64 ln = word_len(s);
+    if s.src[st] == '.' {
+        I64 target = 0;
+        if s.pass == 2 {
+            I64 i = sym_find(s, st, ln);
+            if i < 0 {
+                aerr(s, "undefined local label");
+            }
+            target = s.soff[i];
+        }
+        I64 off = target - here(s);
+        if kind == RK_B26 {
+            emit32(s, basew | ((off / 4) & 0x3ffffff));
+        } else {
+            emit32(s, basew | (((off / 4) & 0x7ffff) << 5));
+        }
+        return;
+    }
+    mark_kind(s, kind, st, ln);
+    emit32(s, basew);
+}
+
+U0 a64_ldst(As* s, I64 load, I64 wf, I64 rt, I64 m) {
+    I64 rn = am_rn(m);
+    I64 off = am_off(m);
+    I64 mode = am_mode(m);
+    if mode == 1 {
+        if load != 0 {
+            emit32(s, a64.ldrx_pre(rt, rn, off));
+        } else {
+            emit32(s, a64.strx_pre(rt, rn, off));
+        }
+        return;
+    }
+    if mode == 2 {
+        if load != 0 {
+            emit32(s, a64.ldrx_post(rt, rn, off));
+        } else {
+            emit32(s, a64.strx_post(rt, rn, off));
+        }
+        return;
+    }
+    if wf != 0 {
+        if load != 0 {
+            emit32(s, a64.ldrw(rt, rn, off));
+        } else {
+            emit32(s, a64.strw(rt, rn, off));
+        }
+        return;
+    }
+    if off >= 0 && off % 8 == 0 && off / 8 < 4096 {
+        if load != 0 {
+            emit32(s, a64.ldrx(rt, rn, off));
+        } else {
+            emit32(s, a64.strx(rt, rn, off));
+        }
+        return;
+    }
+    if off >= 0 - 256 && off < 256 {
+        if load != 0 {
+            emit32(s, a64.ldur(rt, rn, off));
+        } else {
+            emit32(s, a64.stur(rt, rn, off));
+        }
+        return;
+    }
+    aerr(s, "offset out of range");
+}
+
+U0 a64_addsub(As* s, I64 sub) {
+    I64 rd = a64_reg(s) & 255;
+    a64_comma(s);
+    I64 rn = a64_reg(s) & 255;
+    a64_comma(s);
+    skip_ws(s);
+    if cur(s) == '#' {
+        I64 imm = a64_imm(s);
+        I64 sh = 0;
+        if a64_lsl(s) == 12 {
+            sh = 1;
+        }
+        if sub != 0 {
+            emit32(s, a64.subi(rd, rn, imm, sh));
+        } else {
+            emit32(s, a64.addi(rd, rn, imm, sh));
+        }
+        return;
+    }
+    if cur(s) == ':' {
+        for I64 i = 0; i < 6; i++ {
+            s.pos = s.pos + 1;
+        }
+        I64 st = word_start(s);
+        I64 ln = word_len(s);
+        mark_kind(s, RK_LO12, st, ln);
+        emit32(s, a64.addi(rd, rn, 0, 0));
+        return;
+    }
+    I64 rm = a64_reg(s) & 255;
+    if sub != 0 {
+        emit32(s, a64.subr(rd, rn, rm));
+        return;
+    }
+    I64 sh = a64_lsl(s);
+    if sh != 0 {
+        emit32(s, a64.addr_sh(rd, rn, rm, sh));
+        return;
+    }
+    emit32(s, a64.addr(rd, rn, rm));
+}
+
+U0 a64_line(As* s, U8* w) {
+    if str.eq(w, "ret") {
+        emit32(s, a64.ret());
+        return;
+    }
+    if str.eq(w, "svc") {
+        emit32(s, a64.svc(a64_imm(s)));
+        return;
+    }
+    if str.eq(w, "b") {
+        a64_branch(s, RK_B26, a64.b(0));
+        return;
+    }
+    if str.eq(w, "bl") {
+        a64_branch(s, RK_B26, a64.bl(0));
+        return;
+    }
+    if w.len > 2 && w[0] == 'b' && w[1] == '.' {
+        I64 c = a64_cond(s, w[2 : w.len]);
+        a64_branch(s, RK_B19, a64.bcond(c, 0));
+        return;
+    }
+    if str.eq(w, "cbz") || str.eq(w, "cbnz") {
+        I64 nz = 0;
+        if w.len == 4 {
+            nz = 1;
+        }
+        I64 rt = a64_reg(s) & 255;
+        a64_comma(s);
+        if nz != 0 {
+            a64_branch(s, RK_B19, a64.cbnz(rt, 0));
+        } else {
+            a64_branch(s, RK_B19, a64.cbz(rt, 0));
+        }
+        return;
+    }
+    if str.eq(w, "br") {
+        emit32(s, a64.br(a64_reg(s) & 255));
+        return;
+    }
+    if str.eq(w, "blr") {
+        emit32(s, a64.blr(a64_reg(s) & 255));
+        return;
+    }
+    if str.eq(w, "adrp") {
+        I64 rd = a64_reg(s) & 255;
+        a64_comma(s);
+        skip_ws(s);
+        I64 st = word_start(s);
+        I64 ln = word_len(s);
+        mark_kind(s, RK_PG21, st, ln);
+        emit32(s, a64.adrp(rd, 0));
+        return;
+    }
+    if str.eq(w, "movz") || str.eq(w, "movk") || str.eq(w, "movn") {
+        I64 k = 0;
+        if w[3] == 'k' {
+            k = 1;
+        } else if w[3] == 'n' {
+            k = 2;
+        }
+        I64 rd = a64_reg(s) & 255;
+        a64_comma(s);
+        I64 imm = a64_imm(s);
+        I64 hw = a64_lsl(s) / 16;
+        if k == 1 {
+            emit32(s, a64.movk(rd, imm, hw));
+        } else if k == 2 {
+            emit32(s, a64.movn(rd, imm, hw));
+        } else {
+            emit32(s, a64.movz(rd, imm, hw));
+        }
+        return;
+    }
+    if str.eq(w, "mov") {
+        I64 rd = a64_reg(s);
+        a64_comma(s);
+        I64 rm = a64_reg(s);
+        if ((rd | rm) & 256) != 0 {
+            emit32(s, a64.movw(rd & 255, rm & 255));
+        } else {
+            emit32(s, a64.movr(rd, rm));
+        }
+        return;
+    }
+    if str.eq(w, "sxtb") || str.eq(w, "sxth") || str.eq(w, "sxtw")
+        || str.eq(w, "uxtb") || str.eq(w, "uxth") {
+        I64 rd = a64_reg(s) & 255;
+        a64_comma(s);
+        I64 rn = a64_reg(s) & 255;
+        if str.eq(w, "sxtb") {
+            emit32(s, a64.sxtb(rd, rn));
+        } else if str.eq(w, "sxth") {
+            emit32(s, a64.sxth(rd, rn));
+        } else if str.eq(w, "sxtw") {
+            emit32(s, a64.sxtw(rd, rn));
+        } else if str.eq(w, "uxtb") {
+            emit32(s, a64.uxtb(rd, rn));
+        } else {
+            emit32(s, a64.uxth(rd, rn));
+        }
+        return;
+    }
+    if str.eq(w, "add") {
+        a64_addsub(s, 0);
+        return;
+    }
+    if str.eq(w, "sub") {
+        a64_addsub(s, 1);
+        return;
+    }
+    if str.eq(w, "neg") {
+        I64 rd = a64_reg(s) & 255;
+        a64_comma(s);
+        emit32(s, a64.subr(rd, a64.ZR, a64_reg(s) & 255));
+        return;
+    }
+    if str.eq(w, "adc") {
+        I64 rd = a64_reg(s) & 255;
+        a64_comma(s);
+        I64 rn = a64_reg(s) & 255;
+        a64_comma(s);
+        emit32(s, a64.adcr(rd, rn, a64_reg(s) & 255));
+        return;
+    }
+    if str.eq(w, "cmp") {
+        I64 rn = a64_reg(s) & 255;
+        a64_comma(s);
+        skip_ws(s);
+        if cur(s) == '#' {
+            emit32(s, a64.cmpi(rn, a64_imm(s)));
+        } else {
+            emit32(s, a64.cmpr(rn, a64_reg(s) & 255));
+        }
+        return;
+    }
+    if str.eq(w, "tst") {
+        I64 rn = a64_reg(s) & 255;
+        a64_comma(s);
+        skip_ws(s);
+        if cur(s) == '#' {
+            I64 bm = a64.bitmask(a64_imm(s));
+            if bm < 0 {
+                aerr(s, "not a bitmask immediate");
+            }
+            emit32(s, a64.tsti(rn, bm));
+        } else {
+            emit32(s, a64.tstr(rn, a64_reg(s) & 255));
+        }
+        return;
+    }
+    if str.eq(w, "and") || str.eq(w, "orr") || str.eq(w, "eor") {
+        I64 k = 0;
+        if w[0] == 'o' {
+            k = 1;
+        } else if w[0] == 'e' {
+            k = 2;
+        }
+        I64 rd = a64_reg(s) & 255;
+        a64_comma(s);
+        I64 rn = a64_reg(s) & 255;
+        a64_comma(s);
+        skip_ws(s);
+        if cur(s) == '#' {
+            I64 bm = a64.bitmask(a64_imm(s));
+            if bm < 0 {
+                aerr(s, "not a bitmask immediate");
+            }
+            if k == 1 {
+                emit32(s, a64.orri(rd, rn, bm));
+            } else if k == 2 {
+                emit32(s, a64.eori(rd, rn, bm));
+            } else {
+                emit32(s, a64.andi(rd, rn, bm));
+            }
+            return;
+        }
+        I64 rm = a64_reg(s) & 255;
+        if k == 1 {
+            emit32(s, a64.orrr(rd, rn, rm));
+        } else if k == 2 {
+            emit32(s, a64.eorr(rd, rn, rm));
+        } else {
+            emit32(s, a64.andr(rd, rn, rm));
+        }
+        return;
+    }
+    if str.eq(w, "lsl") || str.eq(w, "lslv") {
+        I64 rd = a64_reg(s) & 255;
+        a64_comma(s);
+        I64 rn = a64_reg(s) & 255;
+        a64_comma(s);
+        skip_ws(s);
+        if cur(s) == '#' {
+            emit32(s, a64.lsli(rd, rn, a64_imm(s)));
+            return;
+        }
+        emit32(s, a64.lslv(rd, rn, a64_reg(s) & 255));
+        return;
+    }
+    if str.eq(w, "lsr") || str.eq(w, "lsrv") {
+        I64 rd = a64_reg(s) & 255;
+        a64_comma(s);
+        I64 rn = a64_reg(s) & 255;
+        a64_comma(s);
+        skip_ws(s);
+        if cur(s) == '#' {
+            emit32(s, a64.lsri(rd, rn, a64_imm(s)));
+            return;
+        }
+        emit32(s, a64.lsrv(rd, rn, a64_reg(s) & 255));
+        return;
+    }
+    if str.eq(w, "asr") || str.eq(w, "asrv") {
+        I64 rd = a64_reg(s) & 255;
+        a64_comma(s);
+        I64 rn = a64_reg(s) & 255;
+        a64_comma(s);
+        emit32(s, a64.asrv(rd, rn, a64_reg(s) & 255));
+        return;
+    }
+    if str.eq(w, "mul") {
+        I64 rd = a64_reg(s) & 255;
+        a64_comma(s);
+        I64 rn = a64_reg(s) & 255;
+        a64_comma(s);
+        emit32(s, a64.mul(rd, rn, a64_reg(s) & 255));
+        return;
+    }
+    if str.eq(w, "fadd") || str.eq(w, "fsub") || str.eq(w, "fmul") || str.eq(w, "fdiv") {
+        I64 rd = a64_dreg(s);
+        a64_comma(s);
+        I64 rn = a64_dreg(s);
+        a64_comma(s);
+        I64 rm = a64_dreg(s);
+        if str.eq(w, "fadd") {
+            emit32(s, a64.faddd(rd, rn, rm));
+        } else if str.eq(w, "fsub") {
+            emit32(s, a64.fsubd(rd, rn, rm));
+        } else if str.eq(w, "fmul") {
+            emit32(s, a64.fmuld(rd, rn, rm));
+        } else {
+            emit32(s, a64.fdivd(rd, rn, rm));
+        }
+        return;
+    }
+    if str.eq(w, "fcmp") {
+        I64 rn = a64_dreg(s);
+        a64_comma(s);
+        emit32(s, a64.fcmpd(rn, a64_dreg(s)));
+        return;
+    }
+    if str.eq(w, "fneg") {
+        I64 rd = a64_dreg(s);
+        a64_comma(s);
+        emit32(s, a64.fnegd(rd, a64_dreg(s)));
+        return;
+    }
+    if str.eq(w, "scvtf") {
+        I64 rd = a64_dreg(s);
+        a64_comma(s);
+        emit32(s, a64.scvtfd(rd, a64_reg(s) & 255));
+        return;
+    }
+    if str.eq(w, "fcvtzs") {
+        I64 rd = a64_reg(s) & 255;
+        a64_comma(s);
+        emit32(s, a64.fcvtzsd(rd, a64_dreg(s)));
+        return;
+    }
+    if str.eq(w, "fmov") {
+        skip_ws(s);
+        I64 st = word_start(s);
+        I64 ln = word_len(s);
+        U8* rw = aname(s, st, ln);
+        I64 v = 0;
+        for I64 i = 1; i < ln; i++ {
+            v = v * 10 + (rw[i] as I64) - '0';
+        }
+        a64_comma(s);
+        if rw[0] == 'd' {
+            emit32(s, a64.fmovdx(v, a64_reg(s) & 255));
+        } else {
+            emit32(s, a64.fmovxd(v, a64_dreg(s)));
+        }
+        return;
+    }
+    if str.eq(w, "msub") {
+        I64 rd = a64_reg(s) & 255;
+        a64_comma(s);
+        I64 rn = a64_reg(s) & 255;
+        a64_comma(s);
+        I64 rm = a64_reg(s) & 255;
+        a64_comma(s);
+        emit32(s, a64.msub(rd, rn, rm, a64_reg(s) & 255));
+        return;
+    }
+    if str.eq(w, "sdiv") {
+        I64 rd = a64_reg(s) & 255;
+        a64_comma(s);
+        I64 rn = a64_reg(s) & 255;
+        a64_comma(s);
+        emit32(s, a64.sdiv(rd, rn, a64_reg(s) & 255));
+        return;
+    }
+    if str.eq(w, "udiv") {
+        I64 rd = a64_reg(s) & 255;
+        a64_comma(s);
+        I64 rn = a64_reg(s) & 255;
+        a64_comma(s);
+        emit32(s, a64.udiv(rd, rn, a64_reg(s) & 255));
+        return;
+    }
+    if str.eq(w, "cset") {
+        I64 rd = a64_reg(s) & 255;
+        a64_comma(s);
+        emit32(s, a64.cset(rd, a64_condw(s)));
+        return;
+    }
+    if str.eq(w, "csel") {
+        I64 rd = a64_reg(s) & 255;
+        a64_comma(s);
+        I64 rn = a64_reg(s) & 255;
+        a64_comma(s);
+        I64 rm = a64_reg(s) & 255;
+        a64_comma(s);
+        emit32(s, a64.csel(rd, rn, rm, a64_condw(s)));
+        return;
+    }
+    if str.eq(w, "ldr") || str.eq(w, "str") {
+        I64 load = 0;
+        if w[0] == 'l' {
+            load = 1;
+        }
+        I64 rt = a64_reg(s);
+        a64_comma(s);
+        a64_ldst(s, load, rt & 256, rt & 255, a64_mem(s));
+        return;
+    }
+    if str.eq(w, "ldur") || str.eq(w, "stur") {
+        I64 load = 0;
+        if w[0] == 'l' {
+            load = 1;
+        }
+        I64 rt = a64_reg(s) & 255;
+        a64_comma(s);
+        I64 m = a64_mem(s);
+        if load != 0 {
+            emit32(s, a64.ldur(rt, am_rn(m), am_off(m)));
+        } else {
+            emit32(s, a64.stur(rt, am_rn(m), am_off(m)));
+        }
+        return;
+    }
+    if str.eq(w, "ldrb") || str.eq(w, "ldrsb") || str.eq(w, "ldrh")
+        || str.eq(w, "ldrsh") || str.eq(w, "ldrsw")
+        || str.eq(w, "strb") || str.eq(w, "strh") {
+        I64 rt = a64_reg(s) & 255;
+        a64_comma(s);
+        I64 m = a64_mem(s);
+        I64 rn = am_rn(m);
+        I64 off = am_off(m);
+        if str.eq(w, "ldrb") {
+            emit32(s, a64.ldrb(rt, rn, off));
+        } else if str.eq(w, "ldrsb") {
+            emit32(s, a64.ldrsb(rt, rn, off));
+        } else if str.eq(w, "ldrh") {
+            emit32(s, a64.ldrh(rt, rn, off));
+        } else if str.eq(w, "ldrsh") {
+            emit32(s, a64.ldrsh(rt, rn, off));
+        } else if str.eq(w, "ldrsw") {
+            emit32(s, a64.ldrsw(rt, rn, off));
+        } else if str.eq(w, "strb") {
+            emit32(s, a64.strb(rt, rn, off));
+        } else {
+            emit32(s, a64.strh(rt, rn, off));
+        }
+        return;
+    }
+    if str.eq(w, "stp") || str.eq(w, "ldp") {
+        I64 load = 0;
+        if w[0] == 'l' {
+            load = 1;
+        }
+        I64 rt = a64_reg(s) & 255;
+        a64_comma(s);
+        I64 rt2 = a64_reg(s) & 255;
+        a64_comma(s);
+        I64 m = a64_mem(s);
+        I64 rn = am_rn(m);
+        I64 off = am_off(m);
+        I64 mode = am_mode(m);
+        if mode == 1 {
+            if load != 0 {
+                aerr(s, "ldp pre-index is not in the menu");
+            }
+            emit32(s, a64.stp_pre(rt, rt2, rn, off));
+            return;
+        }
+        if mode == 2 {
+            if load == 0 {
+                aerr(s, "stp post-index is not in the menu");
+            }
+            emit32(s, a64.ldp_post(rt, rt2, rn, off));
+            return;
+        }
+        if load != 0 {
+            emit32(s, a64.ldp(rt, rt2, rn, off));
+        } else {
+            emit32(s, a64.stp(rt, rt2, rn, off));
+        }
+        return;
+    }
+    aerr(s, "unknown arm64 instruction");
+}
+
+U0 run_pass(As* s) {
+    if s.pass == 1 {
+        s.nsym = 0;
+        for I64 i = 0; i < HASHN; i++ {
+            s.hash[i] = 0;
+        }
+    }
+    s.pos = 0;
+    s.line = 1;
+    s.sec = 0;
+    s.bits = 64;
+    s.org = 0;
+    s.flat = false;
+    for at_end(s) == false {
+        skip_ws(s);
+        I64 c = cur(s);
+        if c == '\n' {
+            s.pos = s.pos + 1;
+            s.line = s.line + 1;
+            continue;
+        }
+        if c == '#' {
+            to_eol(s);
+            continue;
+        }
+        I64 st = word_start(s);
+        I64 ln = word_len(s);
+        if ln == 0 {
+            to_eol(s);
+            continue;
+        }
+        U8* w = aname(s, st, ln);
+        skip_ws(s);
+        if cur(s) == ':' {
+            s.pos = s.pos + 1;
+            sym_add(s, st, ln, s.sec, here(s));
+            if s.pass == 2 && s.src[st] != '.' {
+                s.gnoff[s.ngsym] = blob_put(s, st, ln);
+                s.gnlen[s.ngsym] = ln;
+                s.gsec[s.ngsym] = s.sec;
+                s.goff[s.ngsym] = here(s);
+                s.ngsym = s.ngsym + 1;
+            }
+            continue;
+        }
+        if w[0] == '.' {
+            if str.eq(w, ".text") {
+                s.sec = 0;
+                to_eol(s);
+                continue;
+            }
+            if str.eq(w, ".data") {
+                s.sec = 2;
+                to_eol(s);
+                continue;
+            }
+            if str.eq(w, ".section") {
+                skip_ws(s);
+                I64 ss = word_start(s);
+                I64 sl = word_len(s);
+                if str.eq(aname(s, ss, sl), ".data") {
+                    s.sec = 2;
+                } else {
+                    s.sec = 1;
+                }
+                to_eol(s);
+                continue;
+            }
+            if str.eq(w, ".ascii") {
+                skip_ws(s);
+                if cur(s) != '"' {
+                    aerr(s, "expected a string");
+                }
+                s.pos = s.pos + 1;
+                for cur(s) != '"' {
+                    I64 c = cur(s);
+                    if c < 0 {
+                        aerr(s, "unterminated string");
+                    }
+                    s.pos = s.pos + 1;
+                    if c == '\\' {
+                        I64 e = cur(s);
+                        s.pos = s.pos + 1;
+                        if e == 'n' {
+                            c = 10;
+                        } else if e == 't' {
+                            c = 9;
+                        } else if e == '0' {
+                            c = 0;
+                        } else {
+                            c = e;
+                        }
+                    }
+                    emit8(s, c);
+                }
+                s.pos = s.pos + 1;
+                to_eol(s);
+                continue;
+            }
+            if str.eq(w, ".bits16") {
+                s.bits = 16;
+                to_eol(s);
+                continue;
+            }
+            if str.eq(w, ".bits64") {
+                s.bits = 64;
+                to_eol(s);
+                continue;
+            }
+            if str.eq(w, ".org") {
+                s.org = number(s);
+                s.flat = true;
+                to_eol(s);
+                continue;
+            }
+            if str.eq(w, ".byte") {
+                emit8(s, number(s));
+                to_eol(s);
+                continue;
+            }
+            if str.eq(w, ".word") {
+                emit16(s, data_word(s));
+                to_eol(s);
+                continue;
+            }
+            if str.eq(w, ".long") {
+                emit32(s, data_word(s));
+                to_eol(s);
+                continue;
+            }
+            if str.eq(w, ".zero") {
+                I64 zn = number(s);
+                for I64 i = 0; i < zn; i++ {
+                    emit8(s, 0);
+                }
+                to_eol(s);
+                continue;
+            }
+            if str.eq(w, ".quad") {
+                skip_ws(s);
+                I64 c2 = cur(s);
+                if c2 == '-' || (c2 >= '0' && c2 <= '9') {
+                    emit64(s, number(s));
+                } else {
+                    I64 lo = word_start(s);
+                    I64 ll = word_len(s);
+                    mark_abs(s, lo, ll);
+                    emit64(s, 0);
+                }
+                to_eol(s);
+                continue;
+            }
+            if str.eq(w, ".balign") {
+                I64 n = number(s);
+                for (here(s) % n) != 0 {
+                    emit8(s, 0);
+                }
+                to_eol(s);
+                continue;
+            }
+            to_eol(s);
+            continue;
+        }
+        if s.isa == isa.A64 {
+            a64_line(s, w);
+            to_eol(s);
+            continue;
+        }
+        if str.eq(w, "rep") {
+            emit8(s, x86.OPC_REP);
+            st = word_start(s);
+            ln = word_len(s);
+            w = aname(s, st, ln);
+        }
+        if str.eq(w, "a32") {
+            emit8(s, 0x67);
+            st = word_start(s);
+            ln = word_len(s);
+            w = aname(s, st, ln);
+        }
+        I64 nops = 0;
+        Bool lbl = x86.jcc_code(w) >= 0 || str.eq(w, "jmp") || str.eq(w, "call");
+        skip_ws(s);
+        if lbl && at_mem(s) {
+            lbl = false;
+        }
+        if cur(s) != '\n' && cur(s) != '#' && at_end(s) == false {
+            parse_operand(s, s.a, lbl);
+            nops = 1;
+            skip_ws(s);
+            if cur(s) == ',' {
+                s.pos = s.pos + 1;
+                parse_operand(s, s.b, false);
+                nops = 2;
+                if s.a.kind == OPR_MEM && s.a.size == 8 && s.b.kind == OPR_REG {
+                    s.a.size = s.b.size;
+                }
+                if s.b.kind == OPR_MEM && s.b.size == 8 && s.a.kind == OPR_REG {
+                    s.b.size = s.a.size;
+                }
+            }
+        }
+        if s.bits == 16 {
+            encode16(s, w, nops);
+        } else {
+            encode(s, w, nops);
+        }
+        to_eol(s);
+    }
+}
+
+U0 as_reset(As* s) {
+    s.tlen = 0;
+    s.rlen = 0;
+    s.dlen = 0;
+    s.nrel = 0;
+    s.ngsym = 0;
+    s.bloblen = 6;
+    s.fbt = 0;
+    s.fbr = 0;
+    s.fbd = 0;
+    s.fbrel = 0;
+    s.fbg = 0;
+}
+
+U0 assemble_file(As* s, U8* src) {
+    s.src = src;
+    s.fbt = s.tlen;
+    s.fbr = s.rlen;
+    s.fbd = s.dlen;
+    s.fbrel = s.nrel;
+    s.fbg = s.ngsym;
+    s.pass = 1;
+    run_pass(s);
+    s.tlen = s.fbt;
+    s.rlen = s.fbr;
+    s.dlen = s.fbd;
+    s.nrel = s.fbrel;
+    s.ngsym = s.fbg;
+    s.pass = 2;
+    run_pass(s);
+}
+
+I64 gsym_find(As* s, I64 noff, I64 nlen) {
+    for I64 i = 0; i < s.ngsym; i++ {
+        if s.gnlen[i] == nlen {
+            if str.eq(s.blob[s.gnoff[i] : s.gnoff[i] + s.gnlen[i]],
+                         s.blob[noff : noff + nlen]) {
+                return i;
+            }
+        }
+    }
+    return -1;
+}
+
+U0 patch(As* s, I64 sec, I64 off, I64 v, I64 wide) {
+    for I64 i = 0; i < wide; i++ {
+        I64 byte = (v >> (i * 8)) & 255;
+        if sec == 0 {
+            s.text[off + i] = byte as U8;
+        } else if sec == 1 {
+            s.rodata[off + i] = byte as U8;
+        } else {
+            s.data[off + i] = byte as U8;
+        }
+    }
+}
+
+U0 resolve_va(As* s, I64 va0, I64 va1, I64 va2) {
+    for I64 i = 0; i < s.nrel; i++ {
+        I64 tsec = s.rsec[i];
+        I64 toff = s.roff[i];
+        if tsec < 0 {
+            I64 g = gsym_find(s, s.rnoff[i], s.rnlen[i]);
+            if g < 0 {
+                "unresolved symbol: %s\n", s.blob[s.rnoff[i] : s.rnoff[i] + s.rnlen[i]];
+                diag.die("link failed");
+            }
+            tsec = s.gsec[g];
+            toff = s.goff[g];
+        }
+        I64 va = va0;
+        if tsec == 1 {
+            va = va1;
+        } else if tsec == 2 {
+            va = va2;
+        }
+        I64 target = va + toff;
+        va = va0;
+        if s.rwhere[i] == 1 {
+            va = va1;
+        } else if s.rwhere[i] == 2 {
+            va = va2;
+        }
+        I64 field = va + s.rel[i];
+        if s.rwide[i] == 8 {
+            patch(s, s.rwhere[i], s.rel[i], target, 8);
+        } else if s.rwide[i] == 4 {
+            patch(s, s.rwhere[i], s.rel[i], target - (field + 4), 4);
+        } else {
+            or32(s, s.rwhere[i], s.rel[i], a64_fieldbits(s.rwide[i], target, field));
+        }
+    }
+}
+
+U0 put8(U8* b, I64 at, I64 v) {
+    b[at] = v as U8;
+}
+
+U0 put16(U8* b, I64 at, I64 v) {
+    put8(b, at, v & 255);
+    put8(b, at + 1, (v >> 8) & 255);
+}
+
+U0 put32(U8* b, I64 at, I64 v) {
+    put16(b, at, v & 65535);
+    put16(b, at + 2, (v >> 16) & 65535);
+}
+
+U0 put64(U8* b, I64 at, I64 v) {
+    put32(b, at, v & 4294967295);
+    put32(b, at + 4, (v >> 32) & 4294967295);
+}
+
+const I64 OBJHDR = 56;
+
+U8* obj_write(As* s) {
+    I64 n = OBJHDR + s.tlen + s.rlen + s.dlen + s.bloblen
+                + s.ngsym * 32 + s.nrel * 56;
+    U8* b = heap.alloc(n);
+    put64(b, 0, s.tlen);
+    put64(b, 8, s.rlen);
+    put64(b, 16, s.dlen);
+    put64(b, 24, s.bloblen);
+    put64(b, 32, s.ngsym);
+    put64(b, 40, s.nrel);
+    put64(b, 48, 0);
+    I64 at = OBJHDR;
+    for I64 i = 0; i < s.tlen; i++ {
+        b[at + i] = s.text[i];
+    }
+    at = at + s.tlen;
+    for I64 i = 0; i < s.rlen; i++ {
+        b[at + i] = s.rodata[i];
+    }
+    at = at + s.rlen;
+    for I64 i = 0; i < s.dlen; i++ {
+        b[at + i] = s.data[i];
+    }
+    at = at + s.dlen;
+    for I64 i = 0; i < s.bloblen; i++ {
+        b[at + i] = s.blob[i];
+    }
+    at = at + s.bloblen;
+    for I64 i = 0; i < s.ngsym; i++ {
+        put64(b, at, s.gnoff[i]);
+        put64(b, at + 8, s.gnlen[i]);
+        put64(b, at + 16, s.gsec[i]);
+        put64(b, at + 24, s.goff[i]);
+        at = at + 32;
+    }
+    for I64 i = 0; i < s.nrel; i++ {
+        put64(b, at, s.rel[i]);
+        put64(b, at + 8, s.rsec[i]);
+        put64(b, at + 16, s.roff[i]);
+        put64(b, at + 24, s.rnoff[i]);
+        put64(b, at + 32, s.rnlen[i]);
+        put64(b, at + 40, s.rwhere[i]);
+        put64(b, at + 48, s.rwide[i]);
+        at = at + 56;
+    }
+    return b[0 : n];
+}
+
+I64 get64(U8* b, I64 at) {
+    I64 v = 0;
+    for I64 i = 7; i >= 0; i = i - 1 {
+        v = v * 256 + (b[at + i] as I64);
+    }
+    return v;
+}
+
+U0 obj_append(As* s, U8* b) {
+    I64 tl = get64(b, 0);
+    I64 rl = get64(b, 8);
+    I64 dl = get64(b, 16);
+    I64 bl = get64(b, 24);
+    I64 ns = get64(b, 32);
+    I64 nr = get64(b, 40);
+    for (s.tlen % 16) != 0 {
+        s.text[s.tlen] = 0 as U8;
+        s.tlen = s.tlen + 1;
+    }
+    for (s.rlen % 16) != 0 {
+        s.rodata[s.rlen] = 0 as U8;
+        s.rlen = s.rlen + 1;
+    }
+    for (s.dlen % 16) != 0 {
+        s.data[s.dlen] = 0 as U8;
+        s.dlen = s.dlen + 1;
+    }
+    I64 tbase = s.tlen;
+    I64 rbase = s.rlen;
+    I64 dbase = s.dlen;
+    I64 bbase = s.bloblen;
+    I64 at = OBJHDR;
+    for I64 i = 0; i < tl; i++ {
+        s.text[tbase + i] = b[at + i];
+    }
+    at = at + tl;
+    for I64 i = 0; i < rl; i++ {
+        s.rodata[rbase + i] = b[at + i];
+    }
+    at = at + rl;
+    for I64 i = 0; i < dl; i++ {
+        s.data[dbase + i] = b[at + i];
+    }
+    at = at + dl;
+    for I64 i = 0; i < bl; i++ {
+        s.blob[bbase + i] = b[at + i];
+    }
+    at = at + bl;
+    s.tlen = tbase + tl;
+    s.rlen = rbase + rl;
+    s.dlen = dbase + dl;
+    s.bloblen = bbase + bl;
+    for I64 i = 0; i < ns; i++ {
+        I64 sec = get64(b, at + 16);
+        I64 off = get64(b, at + 24);
+        if sec == 0 {
+            off = off + tbase;
+        } else if sec == 1 {
+            off = off + rbase;
+        } else {
+            off = off + dbase;
+        }
+        s.gnoff[s.ngsym] = get64(b, at) + bbase;
+        s.gnlen[s.ngsym] = get64(b, at + 8);
+        s.gsec[s.ngsym] = sec;
+        s.goff[s.ngsym] = off;
+        s.ngsym = s.ngsym + 1;
+        at = at + 32;
+    }
+    for I64 i = 0; i < nr; i++ {
+        I64 sec = get64(b, at + 8);
+        I64 off = get64(b, at + 16);
+        if sec == 0 {
+            off = off + tbase;
+        } else if sec == 1 {
+            off = off + rbase;
+        } else if sec == 2 {
+            off = off + dbase;
+        }
+        I64 where = get64(b, at + 40);
+        I64 fld = get64(b, at);
+        if where == 0 {
+            fld = fld + tbase;
+        } else if where == 1 {
+            fld = fld + rbase;
+        } else {
+            fld = fld + dbase;
+        }
+        s.rel[s.nrel] = fld;
+        s.rwhere[s.nrel] = where;
+        s.rwide[s.nrel] = get64(b, at + 48);
+        s.rsec[s.nrel] = sec;
+        s.roff[s.nrel] = off;
+        s.rnoff[s.nrel] = get64(b, at + 24) + bbase;
+        s.rnlen[s.nrel] = get64(b, at + 32);
+        s.nrel = s.nrel + 1;
+        at = at + 56;
+    }
+}
+
+I64 a64_dreg(As* s) {
+    skip_ws(s);
+    I64 st = word_start(s);
+    I64 ln = word_len(s);
+    U8* w = aname(s, st, ln);
+    if ln >= 2 && w[0] == 'd' {
+        I64 v = 0;
+        for I64 i = 1; i < ln; i++ {
+            if w[i] < '0' || w[i] > '9' {
+                aerr(s, "bad register");
+            }
+            v = v * 10 + (w[i] as I64) - '0';
+        }
+        if v > 31 {
+            aerr(s, "bad register");
+        }
+        return v;
+    }
+    aerr(s, "expected a d register");
+    return 0;
+}

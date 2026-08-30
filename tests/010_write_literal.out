@@ -1,0 +1,1 @@
+tests/010_write_literal.hc2:3: trap: write to read-only

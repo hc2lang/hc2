@@ -1,0 +1,8 @@
+union Bad {
+    I64 i;
+    U0(I64)* f;
+}
+
+I32 main() {
+    return 0;
+}

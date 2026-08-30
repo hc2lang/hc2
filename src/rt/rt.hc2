@@ -1,0 +1,202 @@
+
+U0 hc2_print_lit(I64 addr, I64 len) {
+    _emit_raw(addr, len);
+}
+
+const I64 TK_OOB      = 0;
+const I64 TK_GEN      = 1;
+const I64 TK_PERM     = 2;
+const I64 TK_DIV      = 3;
+const I64 TK_OOM      = 4;
+const I64 TK_NOTBASE  = 5;
+const I64 TK_DFREE    = 6;
+const I64 TK_IMMORTAL = 7;
+const I64 TK_NCALL    = 8;
+const I64 TK_BADFN    = 9;
+const I64 TK_NSTR     = 10;
+
+U0 hc2_trap(I64 addr, I64 len, I64 kind) {
+    _fail_raw(addr, len);
+    switch kind {
+        case TK_OOB:      _fail("out of bounds\n");
+        case TK_GEN:      _fail("use after free\n");
+        case TK_PERM:     _fail("write to read-only\n");
+        case TK_DIV:      _fail("division by zero\n");
+        case TK_OOM:      _fail("out of memory\n");
+        case TK_NOTBASE:  _fail("free: not the allocation base\n");
+        case TK_DFREE:    _fail("double free\n");
+        case TK_IMMORTAL: _fail("free of immortal\n");
+        case TK_NCALL:    _fail("call through null\n");
+        case TK_BADFN:    _fail("not a function of this type\n");
+        default:          _fail("print of null\n");
+    }
+    _stop(134);
+}
+
+U0 _trap(U8* where, I64 kind) {
+    hc2_trap(where.addr, where.len, kind);
+}
+
+I64 hc2_argc = 0;
+I64 hc2_argv = 0;
+
+I64 argc() {
+    return hc2_argc;
+}
+
+U0 hc2_print_i64(I64 v) {
+    U8 b[24] = {};
+    U8* p = &b;
+    U64 u = v as U64;
+    I64 neg = 0;
+    if v < 0 {
+        neg = 1;
+        u = (-v) as U64;
+    }
+    I64 i = 24;
+    for true {
+        i = i - 1;
+        p[i] = ((u % 10) as I64 + '0') as U8;
+        u = u / 10;
+        if u == 0 {
+            break;
+        }
+    }
+    if neg == 1 {
+        i = i - 1;
+        p[i] = '-';
+    }
+    _emit(p[i : 24]);
+}
+
+U0 hc2_print_hex(I64 v) {
+    U8 b[16] = {};
+    U8* p = &b;
+    U64 u = v as U64;
+    I64 i = 16;
+    for true {
+        i = i - 1;
+        I64 d = (u % 16) as I64;
+        if d < 10 {
+            p[i] = (d + '0') as U8;
+        } else {
+            p[i] = (d - 10 + 'a') as U8;
+        }
+        u = u / 16;
+        if u == 0 {
+            break;
+        }
+    }
+    _emit(p[i : 16]);
+}
+
+U0 hc2_print_char(I64 c) {
+    U8 b[1] = {};
+    U8* p = &b;
+    p[0] = c as U8;
+    _emit(p);
+}
+union _F64b {
+    I64 i;
+    F64 f;
+}
+
+U0 _f64_big(I64 v) {
+    _F64b u = {};
+    u.i = v;
+    F64 x = u.f;
+    I64 de = 0;
+    for x >= 10.0 {
+        x = x / 10.0;
+        de = de + 1;
+    }
+    I64 d = x as I64;
+    hc2_print_i64(d);
+    _emit(".");
+    U8 b[6] = {};
+    U8* p = &b;
+    for I64 i = 0; i < 6; i++ {
+        x = (x - (d as F64)) * 10.0;
+        d = x as I64;
+        b[i] = ('0' + d) as U8;
+    }
+    _emit(p[0 : 6]);
+    _emit("e+");
+    hc2_print_i64(de);
+}
+
+U0 hc2_print_f64(I64 v) {
+    U64 bits = v as U64;
+    U64 abs = bits & 9223372036854775807;
+    I64 ex = ((abs >> 52) & 2047) as I64;
+    U64 man = abs & 4503599627370495;
+    if ex == 2047 && man != 0 {
+        _emit("nan");
+        return;
+    }
+    if (bits >> 63) != 0 {
+        _emit("-");
+    }
+    bits = abs;
+    if ex == 2047 {
+        _emit("inf");
+        return;
+    }
+    if ex == 0 {
+        _emit("0.000000");
+        return;
+    }
+    U64 m = man | 4503599627370496;
+    I64 e = ex - 1075;
+    if e > 10 {
+        _f64_big((bits | 0) as I64);
+        return;
+    }
+    I64 ip = 0;
+    U64 r = 0;
+    I64 sh = 0;
+    if e >= 0 {
+        ip = (m << (e as U64)) as I64;
+    } else {
+        sh = 0 - e;
+        if sh > 63 {
+            I64 drop = sh - 63;
+            if drop >= 53 {
+                r = 0;
+            } else {
+                r = m >> (drop as U64);
+            }
+            sh = 63;
+        } else {
+            ip = (m >> (sh as U64)) as I64;
+            r = m & (((1 << sh) - 1) as U64);
+        }
+        if sh > 59 {
+            r = r >> ((sh - 59) as U64);
+            sh = 59;
+        }
+    }
+    I64 fr = 0;
+    for I64 i = 0; i < 6; i++ {
+        r = r * 10;
+        fr = fr * 10 + ((r >> (sh as U64)) as I64);
+        r = r & (((1 << sh) - 1) as U64);
+    }
+    r = r * 10;
+    if (r >> (sh as U64)) >= 5 {
+        fr = fr + 1;
+        if fr == 1000000 {
+            fr = 0;
+            ip = ip + 1;
+        }
+    }
+    hc2_print_i64(ip);
+    _emit(".");
+    U8 b[6] = {};
+    U8* p = &b;
+    for I64 i = 5; i >= 0; i = i - 1 {
+        b[i] = ('0' + fr % 10) as U8;
+        fr = fr / 10;
+    }
+    _emit(p[0 : 6]);
+}

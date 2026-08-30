@@ -1,0 +1,32 @@
+// a struct-returning function type: the paren probe must see `Pt(...)* mk`
+// as a declaration, and sret must flow through the indirect call
+import "heap";
+
+struct Pt {
+    I64 x;
+    I64 y;
+}
+
+Pt make(I64 a, I64 b) {
+    Pt p = {a, b};
+    return p;
+}
+
+struct Srv {
+    U0(I64)* cb;
+}
+
+U0 hello(I64 v) { "hello %d\n", v; }
+
+I32 main() {
+    Pt(I64, I64)* mk = &make;
+    Pt p = mk(3, 4);
+    "pt %d %d\n", p.x, p.y;
+    Srv* s = heap.alloc(sizeof(Srv)) as Srv*;
+    if s.cb == null {
+        "cb starts null\n";
+    }
+    s.cb = &hello;
+    s.cb(7);
+    return 0;
+}

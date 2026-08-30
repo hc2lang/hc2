@@ -1,0 +1,5 @@
+import "pkg3/pk4";
+
+I32 three() {
+    return pk4.answer() - 39;
+}

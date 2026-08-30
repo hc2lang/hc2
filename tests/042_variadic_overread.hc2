@@ -1,0 +1,9 @@
+U0 bad(I64... xs) {
+    "before\n";
+    "%d\n", xs[5];
+}
+
+I32 main() {
+    bad(1, 2);
+    return 0;
+}

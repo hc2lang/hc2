@@ -1,0 +1,9 @@
+import "pkg1";
+import "pkg2";
+import "pkg3";
+import "pkg3/pk4";
+
+I32 main() {
+    "%d %d %d %d\n", pkg1.one(), pkg2.two(), pkg3.three(), pk4.answer();
+    return 0;
+}

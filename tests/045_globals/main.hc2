@@ -1,0 +1,17 @@
+import "lib";
+
+const I64 LOCAL_MAX = 100;
+const Bool DEBUG = false;
+
+I32 main() {
+    "width %d area %d\n", lib.WIDTH, lib.AREA;
+    "%s\n", lib.GREETING;
+    "local %d\n", LOCAL_MAX * 2;
+    if DEBUG {
+        "unreachable\n";
+    }
+    I64 arr[lib.WIDTH] = {};
+    I64* p = &arr;
+    "array of %d bytes\n", p.len;
+    return 0;
+}

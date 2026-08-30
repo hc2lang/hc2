@@ -1,0 +1,474 @@
+
+import "heap";
+import "hc2/diag";
+import "str";
+
+const I64 NW = 28;
+
+const I64 CLS_NONE    = 0;
+const I64 CLS_SCALAR  = 1;
+const I64 CLS_SCALARP = 2;
+const I64 CLS_STRUCT  = 3;
+const I64 CLS_STRUCTP = 4;
+const I64 CLS_FN      = 5;
+
+const I64 NUM_BOOL     = 1;
+const I64 NUM_F64      = 2;
+const I64 BLK_UNSAFE   = 1;
+const I64 GLOB_MUT     = 1;
+const I64 SDEF_UNION   = 1;
+const I64 PARAM_VARARG = 1;
+const I64 SIG_CANON    = 1;
+const I64 AINS_LABEL   = 1;
+const I64 CASE_DEFAULT = 1;
+const I64 CASE_FALLS   = 2;
+const I64 IDX_LOCAL    = 1;
+const I64 IDX_CAP      = 2;
+const I64 IDX_TABLE    = 3;
+const I64 AOF_TABLE    = 3;
+const I64 AOF_FN       = 4;
+const I64 FLD_LEN      = 1;
+const I64 FLD_CADDR    = 2;
+const I64 FLD_FNADDR   = 5;
+const I64 FLD_LO       = 6;
+const I64 FLD_GEN      = 7;
+const I64 FLD_HDR      = 8;
+const I64 CALL_INDIR   = 9;
+
+const I64 FM_PTR    = 0;
+const I64 FM_DIRECT = 1;
+const I64 FM_ADDR   = 2;
+
+const I64 N_KIND  = 0;
+const I64 N_OP    = 1;
+const I64 N_LINE  = 2;
+const I64 N_COL   = 3;
+const I64 N_IVAL  = 4;
+const I64 N_A     = 5;
+const I64 N_B     = 6;
+const I64 N_C     = 7;
+const I64 N_D     = 8;
+const I64 N_NEXT  = 9;
+const I64 N_NOFF  = 10;
+const I64 N_NLEN  = 11;
+const I64 N_DCLS  = 12;
+const I64 N_DKIND = 13;
+const I64 N_DALEN = 14;
+const I64 N_TNOFF = 15;
+const I64 N_TNLEN = 16;
+const I64 N_DSID  = 17;
+const I64 N_TCLS  = 18;
+const I64 N_TKIND = 19;
+const I64 N_TSID  = 20;
+const I64 N_FID   = 21;
+
+const I64 VAR_OFF     = 22;
+const I64 GVAR_G      = 22;
+const I64 BIN_ESZ     = 22;
+const I64 BIN_SIDE    = 26;
+const I64 BIN_CLS     = 27;
+const I64 INDEX_OFF   = 22;
+const I64 INDEX_G     = 22;
+const I64 INDEX_DIM   = 23;
+const I64 INDEX_KIND  = 24;
+const I64 INDEX_ESZ   = 25;
+const I64 SLICE_ESZ   = 22;
+const I64 FIELD_MODE  = 22;
+const I64 FIELD_BASE  = 23;
+const I64 FIELD_OFF   = 24;
+const I64 FIELD_SIZE  = 25;
+const I64 FIELD_W     = 26;
+const I64 ADDR_OFF    = 22;
+const I64 ADDR_G      = 22;
+const I64 ADDR_FN     = 22;
+const I64 ADDR_LEN    = 23;
+const I64 CALL_FN     = 22;
+const I64 CALL_VOFF   = 24;
+const I64 CALL_VCNT   = 25;
+const I64 CALL_VESZ   = 26;
+const I64 CALL_BIG    = 27;
+const I64 PRINT_STR   = 27;
+const I64 INC_OFF     = 22;
+const I64 INC_KIND    = 24;
+const I64 DECL_OFF    = 22;
+const I64 DECL_CLS    = 23;
+const I64 DECL_ESZ    = 24;
+const I64 DECL_CALLINIT = 25;
+const I64 DECL_ECLS   = 26;
+const I64 DECL_ZERO   = 27;
+const I64 RET_OFF     = 22;
+const I64 RET_SIZE    = 23;
+const I64 SW_LO       = 22;
+const I64 SW_SPAN     = 23;
+const I64 CASE_LBL    = 22;
+const I64 CVAL_HI     = 22;
+const I64 GLOB_DONE   = 22;
+const I64 GLOB_BUSY   = 23;
+const I64 GLOB_ESZ    = 24;
+const I64 GLOB_ECLS   = 26;
+const I64 FN_FRAME    = 22;
+const I64 FN_SRET     = 23;
+const I64 FN_BIG      = 24;
+const I64 FN_SIGHASH  = 25;
+const I64 FN_VARIADIC = 26;
+const I64 FN_VKIND    = 27;
+const I64 PARAM_OFF   = 22;
+const I64 SDEF_SIZE   = 22;
+const I64 SDEF_UNSAFE = 23;
+const I64 FDEF_OFF    = 22;
+const I64 FDEF_SIZE   = 23;
+const I64 ASM_CLOB    = 22;
+const I64 AOP_OFF     = 22;
+const I64 AOP_SIZE    = 23;
+
+const I64 ND_NUM   = 1;
+const I64 ND_STR   = 2;
+const I64 ND_VAR   = 3;
+const I64 ND_BIN   = 4;
+const I64 ND_NEG   = 5;
+const I64 ND_INDEX = 6;
+const I64 ND_SLICE = 7;
+const I64 ND_CALL  = 8;
+const I64 ND_FIELD = 9;
+const I64 ND_ADDR  = 10;
+const I64 ND_AS    = 11;
+const I64 ND_SIZEOF = 12;
+const I64 ND_ASSIGN = 13;
+const I64 ND_INCDEC = 14;
+const I64 ND_DECL  = 15;
+const I64 ND_IF    = 16;
+const I64 ND_FOR   = 17;
+const I64 ND_BLOCK = 18;
+const I64 ND_RETURN = 19;
+const I64 ND_PRINT = 20;
+const I64 ND_EXPR  = 21;
+const I64 ND_DEFER = 22;
+const I64 ND_BREAK = 23;
+const I64 ND_CONT  = 24;
+const I64 ND_FN    = 25;
+const I64 ND_PARAM = 26;
+const I64 ND_SDEF  = 27;
+const I64 ND_FDEF  = 28;
+const I64 ND_IMPORT = 29;
+const I64 ND_ILIST = 30;
+const I64 ND_GLOBAL = 34;
+const I64 ND_GVAR  = 35;
+const I64 ND_ASM   = 31;
+const I64 ND_AINS  = 32;
+const I64 ND_AOP   = 33;
+const I64 ND_SIG   = 36;
+const I64 ND_NULL  = 37;
+const I64 ND_SWITCH = 38;
+const I64 ND_CASE  = 39;
+const I64 ND_CVAL  = 40;
+const I64 ND_FALLT = 41;
+
+const I64 OP_ADD = 1;
+const I64 OP_SUB = 2;
+const I64 OP_MUL = 3;
+const I64 OP_DIV = 4;
+const I64 OP_MOD = 5;
+const I64 OP_LT  = 6;
+const I64 OP_LE  = 7;
+const I64 OP_GT  = 8;
+const I64 OP_GE  = 9;
+const I64 OP_EQ  = 10;
+const I64 OP_NE  = 11;
+const I64 OP_SHL = 12;
+const I64 OP_SHR = 13;
+const I64 OP_AND = 14;
+const I64 OP_XOR = 15;
+const I64 OP_OR  = 16;
+const I64 OP_LAND = 17;
+const I64 OP_LOR = 18;
+
+struct Ast {
+    I64* iv;
+    I64 n;
+    I64 cap;
+    U8* sb;
+    I64 sblen;
+    I64 sbcap;
+    I64 top;
+    I64 topend;
+    I64 curfid;
+    I64* fpoff;
+    I64* fplen;
+    I64* fpkg;
+    I64 nfiles;
+    I64* ppoff;
+    I64* pplen;
+    I64* pstate;
+    I64* pimp;
+    I64* pnimp;
+    I64 npkg;
+    I64 sighead;
+}
+
+Ast* ast_new(I64 ncap, I64 scap) {
+    Ast* t = heap.alloc(sizeof(Ast)) as Ast*;
+    t.iv = heap.alloc(ncap * NW * sizeof(I64)) as I64*;
+    t.n = 1;
+    t.cap = ncap;
+    t.sb = heap.alloc(scap);
+    t.sblen = 0;
+    t.sbcap = scap;
+    t.top = 0;
+    t.topend = 0;
+    t.curfid = 0;
+    t.fpoff = heap.alloc(64 * sizeof(I64)) as I64*;
+    t.fplen = heap.alloc(64 * sizeof(I64)) as I64*;
+    t.fpkg = heap.alloc(64 * sizeof(I64)) as I64*;
+    t.nfiles = 0;
+    t.ppoff = heap.alloc(64 * sizeof(I64)) as I64*;
+    t.pplen = heap.alloc(64 * sizeof(I64)) as I64*;
+    t.pstate = heap.alloc(64 * sizeof(I64)) as I64*;
+    t.pimp = heap.alloc(64 * 24 * sizeof(I64)) as I64*;
+    t.pnimp = heap.alloc(64 * sizeof(I64)) as I64*;
+    t.npkg = 0;
+    t.sighead = 0;
+    return t;
+}
+
+I64 pkg_new(Ast* t, U8* path) {
+    if t.npkg >= 64 {
+        diag.die("too many packages");
+    }
+    I64 p = t.npkg;
+    t.ppoff[p] = intern(t, path);
+    t.pplen[p] = path.len;
+    t.pstate[p] = 0;
+    t.pnimp[p] = 0;
+    t.npkg = p + 1;
+    return p;
+}
+
+U8* pkg_path(Ast* t, I64 p) {
+    return blob(t, t.ppoff[p], t.pplen[p]);
+}
+
+I64 pkg_find(Ast* t, U8* path) {
+    for I64 p = 0; p < t.npkg; p++ {
+        if str.eq(pkg_path(t, p), path) {
+            return p;
+        }
+    }
+    return -1;
+}
+
+U8* pkg_name(Ast* t, I64 p) {
+    U8* path = pkg_path(t, p);
+    if path.len == 0 {
+        return "main";
+    }
+    I64 cut = 0;
+    for I64 i = 0; i < path.len; i++ {
+        if path[i] == '/' {
+            cut = i + 1;
+        }
+    }
+    return path[cut : path.len];
+}
+
+U0 pkg_addimp(Ast* t, I64 p, I64 q) {
+    I64 n = t.pnimp[p];
+    for I64 i = 0; i < n; i++ {
+        if t.pimp[p * 24 + i] == q {
+            return;
+        }
+    }
+    if n >= 24 {
+        diag.die("too many imports in one package");
+    }
+    t.pimp[p * 24 + n] = q;
+    t.pnimp[p] = n + 1;
+}
+
+I64 pkg_imp(Ast* t, I64 p, I64 i) {
+    return t.pimp[p * 24 + i];
+}
+
+I64 ng(Ast* t, I64 id, I64 f) {
+    return t.iv[id * NW + f];
+}
+
+U0 ns(Ast* t, I64 id, I64 f, I64 v) {
+    t.iv[id * NW + f] = v;
+}
+
+I64 nkind(Ast* t, I64 id) { return ng(t, id, N_KIND); }
+I64 nop(Ast* t, I64 id)   { return ng(t, id, N_OP); }
+I64 nline(Ast* t, I64 id) { return ng(t, id, N_LINE); }
+I64 na(Ast* t, I64 id)    { return ng(t, id, N_A); }
+I64 nb(Ast* t, I64 id)    { return ng(t, id, N_B); }
+I64 nc(Ast* t, I64 id)    { return ng(t, id, N_C); }
+I64 nd(Ast* t, I64 id)    { return ng(t, id, N_D); }
+I64 nnext(Ast* t, I64 id) { return ng(t, id, N_NEXT); }
+
+I64 nd_unary(Ast* t, I64 kind, I64 line, I64 col, I64 operand) {
+    I64 n = node_new(t, kind, line, col);
+    ns(t, n, N_A, operand);
+    return n;
+}
+
+I64 nd_bin(Ast* t, I64 line, I64 col, I64 op, I64 lhs, I64 rhs) {
+    I64 n = node_new(t, ND_BIN, line, col);
+    ns(t, n, N_OP, op);
+    ns(t, n, N_A, lhs);
+    ns(t, n, N_B, rhs);
+    return n;
+}
+
+I64 nd_field(Ast* t, I64 line, I64 col, I64 base, I64 noff, I64 nlen) {
+    I64 n = node_new(t, ND_FIELD, line, col);
+    ns(t, n, N_A, base);
+    ns(t, n, N_NOFF, noff);
+    ns(t, n, N_NLEN, nlen);
+    return n;
+}
+
+I64 nd_call(Ast* t, I64 line, I64 col, I64 callee, I64 args) {
+    I64 n = node_new(t, ND_CALL, line, col);
+    ns(t, n, N_A, callee);
+    ns(t, n, N_B, args);
+    return n;
+}
+
+I64 nd_index(Ast* t, I64 line, I64 col, I64 base, I64 idx) {
+    I64 n = node_new(t, ND_INDEX, line, col);
+    ns(t, n, N_A, base);
+    ns(t, n, N_B, idx);
+    return n;
+}
+
+I64 nd_slice(Ast* t, I64 line, I64 col, I64 base, I64 lo, I64 hi) {
+    I64 n = node_new(t, ND_SLICE, line, col);
+    ns(t, n, N_A, base);
+    ns(t, n, N_B, lo);
+    ns(t, n, N_C, hi);
+    return n;
+}
+
+I64 nd_assign(Ast* t, I64 line, I64 col, I64 target, I64 value) {
+    I64 n = node_new(t, ND_ASSIGN, line, col);
+    ns(t, n, N_A, target);
+    ns(t, n, N_B, value);
+    return n;
+}
+
+I64 nd_if(Ast* t, I64 line, I64 col, I64 cond, I64 then, I64 els) {
+    I64 n = node_new(t, ND_IF, line, col);
+    ns(t, n, N_A, cond);
+    ns(t, n, N_B, then);
+    ns(t, n, N_C, els);
+    return n;
+}
+
+I64 nd_for(Ast* t, I64 line, I64 col, I64 init, I64 cond, I64 step, I64 body) {
+    I64 n = node_new(t, ND_FOR, line, col);
+    ns(t, n, N_A, init);
+    ns(t, n, N_B, cond);
+    ns(t, n, N_C, step);
+    ns(t, n, N_D, body);
+    return n;
+}
+
+I64 nd_print(Ast* t, I64 line, I64 col, I64 soff, I64 slen, I64 args) {
+    I64 n = node_new(t, ND_PRINT, line, col);
+    ns(t, n, N_NOFF, soff);
+    ns(t, n, N_NLEN, slen);
+    ns(t, n, N_A, args);
+    return n;
+}
+
+I64 ast_addfile(Ast* t, U8* path, I64 pkg) {
+    if t.nfiles >= 64 {
+        diag.die("too many input files");
+    }
+    I64 f = t.nfiles;
+    t.fpoff[f] = intern(t, path);
+    t.fplen[f] = path.len;
+    t.fpkg[f] = pkg;
+    t.nfiles = f + 1;
+    t.curfid = f;
+    return f;
+}
+
+I64 node_pkg(Ast* t, I64 n) {
+    return t.fpkg[ng(t, n, N_FID)];
+}
+
+U8* file_path(Ast* t, I64 fid) {
+    return blob(t, t.fpoff[fid], t.fplen[fid]);
+}
+
+I64 node_new(Ast* t, I64 kind, I64 line, I64 col) {
+    if t.n >= t.cap {
+        diag.die("AST arena full");
+    }
+    I64 id = t.n;
+    t.n = id + 1;
+    ns(t, id, N_KIND, kind);
+    ns(t, id, N_LINE, line);
+    ns(t, id, N_COL, col);
+    ns(t, id, N_DALEN, -1);
+    ns(t, id, N_DSID, -1);
+    ns(t, id, N_TSID, -1);
+    ns(t, id, N_FID, t.curfid);
+    return id;
+}
+
+I64 intern(Ast* t, U8* s) {
+    I64 off = t.sblen;
+    if off + s.len > t.sbcap {
+        diag.die("string blob full");
+    }
+    for I64 i = 0; i < s.len; i++ {
+        t.sb[off + i] = s[i];
+    }
+    t.sblen = off + s.len;
+    return off;
+}
+
+U8* blob(Ast* t, I64 off, I64 len) {
+    return t.sb[off : off + len];
+}
+
+U8* nname(Ast* t, I64 id) {
+    return blob(t, ng(t, id, N_NOFF), ng(t, id, N_NLEN));
+}
+
+U0 top_add(Ast* t, I64 id) {
+    if t.top == 0 {
+        t.top = id;
+    } else {
+        ns(t, t.topend, N_NEXT, id);
+    }
+    t.topend = id;
+}
+
+const I64 SK_U0   = 1;
+const I64 SK_BOOL = 2;
+const I64 SK_I8   = 3;
+const I64 SK_I16  = 4;
+const I64 SK_I32  = 5;
+const I64 SK_I64  = 6;
+const I64 SK_U8   = 7;
+const I64 SK_U16  = 8;
+const I64 SK_U32  = 9;
+const I64 SK_U64  = 10;
+const I64 SK_F64  = 11;
+
+I64 sk_size(I64 k) {
+    switch k {
+        case SK_U0:            return 0;
+        case SK_BOOL, SK_I8, SK_U8: return 1;
+        case SK_I16, SK_U16:   return 2;
+        case SK_I32, SK_U32:   return 4;
+    }
+    return 8;
+}
+
+Bool sk_signed(I64 k) {
+    return k == SK_I8 || k == SK_I16 || k == SK_I32 || k == SK_I64;
+}

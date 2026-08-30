@@ -1,0 +1,8 @@
+I32 main() {
+    I64 v = 0;
+    asm {
+        MOV RAX, [RSP]
+        MOV v, RAX
+    }
+    return 0;
+}

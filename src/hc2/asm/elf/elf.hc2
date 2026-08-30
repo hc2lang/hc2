@@ -1,0 +1,104 @@
+import "hc2/diag";
+import "heap";
+import "hc2/asm";
+import "hc2/isa";
+
+const I64 VBASE = 0x400000;
+const I64 ELF_MAGIC64_LE = 0x10102464C457F;
+const I64 ET_EXEC = 2;
+const I64 EM_X86_64 = 62;
+const I64 EM_AARCH64 = 183;
+const I64 PT_LOAD = 1;
+const I64 PF_RWX = 7;
+
+struct Ehdr {
+    I64 ident;
+    I64 ident2;
+    U16 etype;
+    U16 machine;
+    I32 version;
+    I64 entry;
+    I64 phoff;
+    I64 shoff;
+    I32 flags;
+    U16 ehsize;
+    U16 phentsize;
+    U16 phnum;
+    U16 shentsize;
+    U16 shnum;
+    U16 shstrndx;
+}
+
+struct Phdr {
+    I32 ptype;
+    I32 pflags;
+    I64 off;
+    I64 vaddr;
+    I64 paddr;
+    I64 filesz;
+    I64 memsz;
+    I64 palign;
+}
+
+I64 sec_base(asm.As* s, I64 sec) {
+    I64 t = sizeof(Ehdr) + sizeof(Phdr);
+    t = (t + 15) / 16 * 16;
+    if sec == 0 {
+        return t;
+    }
+    I64 r = (t + s.tlen + 15) / 16 * 16;
+    if sec == 1 {
+        return r;
+    }
+    return (r + s.rlen + 4095) / 4096 * 4096;
+}
+
+U8* image(asm.As* s) {
+    asm.resolve_va(s, VBASE + sec_base(s, 0), VBASE + sec_base(s, 1), VBASE + sec_base(s, 2));
+    I64 dbase = sec_base(s, 2);
+    I64 total = dbase + s.dlen;
+    U8* img = heap.alloc(total + 16);
+    I64 e = asm.gsym_find(s, 0, 6);
+    if e < 0 {
+        diag.die("no _start");
+    }
+    I64 entry = VBASE + sec_base(s, s.gsec[e]) + s.goff[e];
+
+    Ehdr* h = img[0 : 64] as Ehdr*;
+    h.ident = ELF_MAGIC64_LE;
+    h.etype = ET_EXEC as U16;
+    if s.isa == isa.A64 {
+        h.machine = EM_AARCH64 as U16;
+    } else {
+        h.machine = EM_X86_64 as U16;
+    }
+    h.version = 1;
+    h.entry = entry;
+    h.phoff = sizeof(Ehdr);
+    h.ehsize = sizeof(Ehdr) as U16;
+    h.phentsize = sizeof(Phdr) as U16;
+    h.phnum = 1;
+
+    Phdr* p = img[sizeof(Ehdr) : sizeof(Ehdr) + sizeof(Phdr)] as Phdr*;
+    p.ptype = PT_LOAD as I32;
+    p.pflags = PF_RWX as I32;
+    p.off = 0;
+    p.vaddr = VBASE;
+    p.paddr = VBASE;
+    p.filesz = total;
+    p.memsz = total;
+    p.palign = 4096;
+
+    I64 tb = sec_base(s, 0);
+    for I64 i = 0; i < s.tlen; i++ {
+        img[tb + i] = s.text[i];
+    }
+    I64 rb = sec_base(s, 1);
+    for I64 i = 0; i < s.rlen; i++ {
+        img[rb + i] = s.rodata[i];
+    }
+    for I64 i = 0; i < s.dlen; i++ {
+        img[dbase + i] = s.data[i];
+    }
+    return img[0 : total];
+}

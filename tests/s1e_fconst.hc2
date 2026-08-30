@@ -1,0 +1,5 @@
+const F64 BAD = 1.5 * 2.0;
+
+I32 main() {
+    return 0;
+}

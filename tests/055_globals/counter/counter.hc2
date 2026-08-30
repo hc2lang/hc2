@@ -1,0 +1,12 @@
+// The state a package keeps between calls: a bare top-level declaration
+// with an initializer is storage; everything marked `const` is not.
+I64 n = 0;
+I64 _step = 1;
+
+U0 bump() {
+    n = n + _step;
+}
+
+U0 set_step(I64 s) {
+    _step = s;
+}

@@ -1,0 +1,10 @@
+struct Bad {
+    U8* name;
+    I64 v;
+}
+
+Bad tab[2] = {{"a", 1}, {"b", 2}};
+
+I32 main() {
+    return 0;
+}

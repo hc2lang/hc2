@@ -1,0 +1,6 @@
+const I64 A = B;
+const I64 B = A;
+
+I32 main() {
+    return A as I32;
+}

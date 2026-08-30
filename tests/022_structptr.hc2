@@ -1,0 +1,18 @@
+import "heap";
+
+struct Pt {
+    I64 x;
+    I64 y;
+}
+
+I32 main() {
+    Pt* ps = heap.alloc(4 * sizeof(Pt)) as Pt*;
+    for I64 i = 0; i < 4; i++ {
+        Pt* p = ps + i;
+        p.x = i * 10;
+        p.y = i;
+    }
+    Pt* q = ps + 2;
+    "q %d %d\n", q.x, q.y;
+    return 0;
+}

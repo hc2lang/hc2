@@ -1,0 +1,2 @@
+before
+tests/070_fnptr_nullcall.hc2:10: trap: call through null

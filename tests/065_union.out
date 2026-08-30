@@ -1,0 +1,7 @@
+zero 0
+time aabbccdd date 11223344
+whole 55667788aabbccdd
+size 8
+low byte B
+via ptr C
+heap Z

@@ -1,0 +1,7 @@
+I32 answer() {
+    return _seed() * 6;
+}
+
+I32 _seed() {
+    return 7;
+}

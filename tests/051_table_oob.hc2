@@ -1,0 +1,8 @@
+const I64 PRIMES[3] = {2, 3, 5};
+
+I32 main() {
+    I64 i = 5;
+    "before\n";
+    "%d\n", PRIMES[i];
+    return 0;
+}

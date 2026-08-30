@@ -1,0 +1,417 @@
+import "hash";
+import "hc2/diag";
+import "heap";
+import "hc2/asm";
+
+const I64 MACHO_VBASE = 0x100000000;
+const I64 MACHO_PAGE = 16384;
+
+const I64 MH_MAGIC64 = 0xFEEDFACF;
+const I64 MH_EXECUTE = 2;
+const I64 MH_NOUNDEFS_DYLDLINK_TWOLEVEL_PIE = 0x200085;
+const I64 CPU_ARM64 = 0x0100000C;
+
+const I64 LC_SEGMENT_64 = 0x19;
+const I64 LC_SYMTAB = 0x2;
+const I64 LC_DYSYMTAB = 0xB;
+const I64 LC_LOAD_DYLIB = 0xC;
+const I64 LC_LOAD_DYLINKER = 0xE;
+const I64 LC_UUID = 0x1B;
+const I64 LC_CODE_SIGNATURE = 0x1D;
+const I64 LC_BUILD_VERSION = 0x32;
+const I64 LC_MAIN = 0x80000028;
+const I64 LC_DYLD_CHAINED_FIXUPS = 0x80000034;
+const I64 DYSYMTAB_SIZE = 80;
+
+const I64 PLATFORM_MACOS = 1;
+const I64 MACOS_14_0 = 0x000E0000;
+const I64 LIBSYSTEM_VERSION_5_76 = 0x054C0000;
+const I64 VERSION_1_0 = 0x00010000;
+
+const I64 PTR64_OFFSET_FORMAT = 6;
+const I64 PAGE_START_NONE = 0xFFFF;
+const I64 FIXSEG_HEAD = 22;
+
+const I64 CSMAGIC_SUPERBLOB = 0xFADE0CC0;
+const I64 CSMAGIC_CODEDIR = 0xFADE0C02;
+const I64 CS_SLOT_CODEDIR = 0;
+const I64 CD_VERSION_EXECSEG = 0x20400;
+const I64 CD_ADHOC = 2;
+const I64 CD_HASH_SHA256 = 2;
+const I64 CD_PAGE_4K_LOG2 = 12;
+const I64 EXECSEG_MAIN_BINARY = 1;
+
+struct MachHdr {
+    I32 magic;
+    I32 cputype;
+    I32 cpusub;
+    I32 filetype;
+    I32 ncmds;
+    I32 sizeofcmds;
+    I32 flags;
+    I32 reserved;
+}
+
+struct Seg {
+    I32 cmd;
+    I32 cmdsize;
+    I64 name0;
+    I64 name1;
+    I64 vmaddr;
+    I64 vmsize;
+    I64 fileoff;
+    I64 filesz;
+    I32 maxp;
+    I32 initp;
+    I32 nsects;
+    I32 segflags;
+}
+
+struct LcData {
+    I32 cmd;
+    I32 cmdsize;
+    I32 dataoff;
+    I32 datasize;
+}
+
+struct LcSymtab {
+    I32 cmd;
+    I32 cmdsize;
+    I32 symoff;
+    I32 nsyms;
+    I32 stroff;
+    I32 strsize;
+}
+
+struct LcHead {
+    I32 cmd;
+    I32 cmdsize;
+}
+
+struct LcStr {
+    I32 cmd;
+    I32 cmdsize;
+    I32 nameoff;
+}
+
+struct LcDylib {
+    I32 cmd;
+    I32 cmdsize;
+    I32 nameoff;
+    I32 timestamp;
+    I32 curver;
+    I32 compat;
+}
+
+struct LcBuild {
+    I32 cmd;
+    I32 cmdsize;
+    I32 platform;
+    I32 minos;
+    I32 sdk;
+    I32 ntools;
+}
+
+struct LcMain {
+    I32 cmd;
+    I32 cmdsize;
+    I64 entryoff;
+    I64 stacksize;
+}
+
+struct FixHdr {
+    I32 version;
+    I32 starts_off;
+    I32 imports_off;
+    I32 symbols_off;
+    I32 imports_count;
+    I32 imports_format;
+    I32 symbols_format;
+}
+
+struct FixSeg {
+    I32 size;
+    U16 psize;
+    U16 pformat;
+    I64 segoff;
+    I32 maxvp;
+    U16 pcount;
+}
+
+I64 _round(I64 x, I64 a) {
+    return (x + a - 1) / a * a;
+}
+
+U0 put32be(U8* b, I64 at, I64 v) {
+    asm.put8(b, at, (v >> 24) & 255);
+    asm.put8(b, at + 1, (v >> 16) & 255);
+    asm.put8(b, at + 2, (v >> 8) & 255);
+    asm.put8(b, at + 3, v & 255);
+}
+
+U0 put64be(U8* b, I64 at, I64 v) {
+    put32be(b, at, (v >> 32) & 4294967295);
+    put32be(b, at + 4, v & 4294967295);
+}
+
+U0 macho_seg(U8* b, I64 at, U8* name, I64 vmaddr, I64 vmsize,
+             I64 fileoff, I64 filesize, I64 maxp, I64 initp) {
+    Seg* g = b[at : at + 72] as Seg*;
+    g.cmd = LC_SEGMENT_64 as I32;
+    g.cmdsize = 72;
+    for I64 i = 0; i < name.len && i < 16; i++ {
+        b[at + 8 + i] = name[i];
+    }
+    g.vmaddr = vmaddr;
+    g.vmsize = vmsize;
+    g.fileoff = fileoff;
+    g.filesz = filesize;
+    g.maxp = maxp as I32;
+    g.initp = initp as I32;
+}
+
+U0 macho_str(U8* b, I64 at, U8* s) {
+    for I64 i = 0; i < s.len; i++ {
+        b[at + i] = s[i];
+    }
+    b[at + s.len] = 0 as U8;
+}
+
+U8* image(asm.As* s) {
+    U8* dyld = "/usr/lib/dyld";
+    U8* libsys = "/usr/lib/libSystem.B.dylib";
+    I64 dyld_cmd = _round(12 + dyld.len + 1, 8);
+    I64 libsys_cmd = _round(24 + libsys.len + 1, 8);
+    I64 nsegs = 4;
+    I64 sizeofcmds = nsegs * 72 + 16 + 24 + 80 + dyld_cmd + 24 + 24 + 24 + libsys_cmd + 16;
+    I64 ncmds = nsegs + 9;
+    I64 hdrsize = 32 + sizeofcmds;
+
+    I64 textva = MACHO_VBASE + hdrsize;
+    I64 textsz = _round(hdrsize + s.tlen, MACHO_PAGE);
+    I64 datava = MACHO_VBASE + textsz;
+    I64 datasz = _round(_round(s.rlen, 16) + s.dlen, MACHO_PAGE);
+    asm.resolve_va(s, textva, datava, datava + _round(s.rlen, 16));
+
+    I64 le_off = textsz + datasz;
+    I64 le_va = MACHO_VBASE + le_off;
+
+    I64 page_count = datasz / MACHO_PAGE;
+    I64 fx_off = le_off;
+    I64 fx_seg = 32 + 4 + nsegs * 4;
+    I64 fx_imports = fx_seg + FIXSEG_HEAD + page_count * 2;
+    I64 fx_len = _round(fx_imports + 1, 8);
+    I64 str_off = fx_off + fx_len;
+    I64 str_len = 8;
+    I64 climit = _round(str_off + str_len, 16);
+
+    I64 npages = (climit + 4095) / 4096;
+    U8* ident = "hc2";
+    I64 cd_fixed = 88;
+    I64 identlen = ident.len + 1;
+    I64 hash_off = cd_fixed + identlen;
+    I64 cd_len = hash_off + npages * 32;
+    I64 sb_len = 12 + 8 + cd_len;
+    I64 le_len = (climit - le_off) + sb_len;
+    I64 total = climit + sb_len;
+
+    I64 e = asm.gsym_find(s, 0, 6);
+    if e < 0 {
+        diag.die("no _start");
+    }
+    I64 entryoff = hdrsize + s.goff[e];
+
+    U8* img = heap.alloc(total + 16);
+
+    MachHdr* h = img[0 : 32] as MachHdr*;
+    h.magic = MH_MAGIC64 as I32;
+    h.cputype = CPU_ARM64 as I32;
+    h.filetype = MH_EXECUTE as I32;
+    h.ncmds = ncmds as I32;
+    h.sizeofcmds = sizeofcmds as I32;
+    h.flags = MH_NOUNDEFS_DYLDLINK_TWOLEVEL_PIE as I32;
+
+    I64 at = 32;
+    macho_seg(img, at, "__PAGEZERO", 0, MACHO_VBASE, 0, 0, 0, 0);
+    at = at + 72;
+    macho_seg(img, at, "__TEXT", MACHO_VBASE, textsz, 0, textsz, 5, 5);
+    at = at + 72;
+    macho_seg(img, at, "__DATA", datava, datasz, textsz, datasz, 3, 3);
+    at = at + 72;
+    macho_seg(img, at, "__LINKEDIT", le_va, _round(le_len, MACHO_PAGE), le_off, le_len, 1, 1);
+    at = at + 72;
+
+    LcData* fixc = img[at : at + 16] as LcData*;
+    fixc.cmd = LC_DYLD_CHAINED_FIXUPS as I32;
+    fixc.cmdsize = 16;
+    fixc.dataoff = fx_off as I32;
+    fixc.datasize = fx_len as I32;
+    at = at + 16;
+
+    LcSymtab* sym = img[at : at + 24] as LcSymtab*;
+    sym.cmd = LC_SYMTAB as I32;
+    sym.cmdsize = 24;
+    sym.symoff = str_off as I32;
+    sym.stroff = str_off as I32;
+    sym.strsize = str_len as I32;
+    at = at + 24;
+
+    LcHead* dys = img[at : at + 8] as LcHead*;
+    dys.cmd = LC_DYSYMTAB as I32;
+    dys.cmdsize = DYSYMTAB_SIZE as I32;
+    at = at + DYSYMTAB_SIZE;
+
+    LcStr* dyl = img[at : at + 16] as LcStr*;
+    dyl.cmd = LC_LOAD_DYLINKER as I32;
+    dyl.cmdsize = dyld_cmd as I32;
+    dyl.nameoff = 12;
+    macho_str(img, at + 12, dyld);
+    at = at + dyld_cmd;
+
+    LcHead* uu = img[at : at + 8] as LcHead*;
+    uu.cmd = LC_UUID as I32;
+    uu.cmdsize = 24;
+    for I64 i = 0; i < 16; i++ {
+        asm.put8(img, at + 8 + i, (i * 37 + 1) & 255);
+    }
+    at = at + 24;
+
+    LcBuild* bv = img[at : at + 24] as LcBuild*;
+    bv.cmd = LC_BUILD_VERSION as I32;
+    bv.cmdsize = 24;
+    bv.platform = PLATFORM_MACOS as I32;
+    bv.minos = MACOS_14_0 as I32;
+    bv.sdk = MACOS_14_0 as I32;
+    at = at + 24;
+
+    LcMain* mn = img[at : at + 24] as LcMain*;
+    mn.cmd = LC_MAIN as I32;
+    mn.cmdsize = 24;
+    mn.entryoff = entryoff;
+    at = at + 24;
+
+    LcDylib* lib = img[at : at + 24] as LcDylib*;
+    lib.cmd = LC_LOAD_DYLIB as I32;
+    lib.cmdsize = libsys_cmd as I32;
+    lib.nameoff = 24;
+    lib.timestamp = 2;
+    lib.curver = LIBSYSTEM_VERSION_5_76 as I32;
+    lib.compat = VERSION_1_0 as I32;
+    macho_str(img, at + 24, libsys);
+    at = at + libsys_cmd;
+
+    LcData* sig = img[at : at + 16] as LcData*;
+    sig.cmd = LC_CODE_SIGNATURE as I32;
+    sig.cmdsize = 16;
+    sig.dataoff = climit as I32;
+    sig.datasize = sb_len as I32;
+    at = at + 16;
+
+    for I64 i = 0; i < s.tlen; i++ {
+        img[hdrsize + i] = s.text[i];
+    }
+    for I64 i = 0; i < s.rlen; i++ {
+        img[textsz + i] = s.rodata[i];
+    }
+    for I64 i = 0; i < s.dlen; i++ {
+        img[textsz + _round(s.rlen, 16) + i] = s.data[i];
+    }
+
+    I64* fo = heap.alloc((s.nrel + 1) * sizeof(I64)) as I64*;
+    I64 nf = 0;
+    for I64 i = 0; i < s.nrel; i++ {
+        if s.rwide[i] == 8 && (s.rwhere[i] == 1 || s.rwhere[i] == 2) {
+            I64 d = s.rel[i];
+            if s.rwhere[i] == 2 {
+                d = _round(s.rlen, 16) + d;
+            }
+            fo[nf] = d;
+            nf = nf + 1;
+        }
+    }
+    for I64 i = 1; i < nf; i++ {
+        I64 v = fo[i];
+        I64 j = i - 1;
+        for j >= 0 && fo[j] > v {
+            fo[j + 1] = fo[j];
+            j = j - 1;
+        }
+        fo[j + 1] = v;
+    }
+    for I64 k = 0; k < nf; k++ {
+        I64 off = textsz + fo[k];
+        I64 target = asm.get64(img, off) - MACHO_VBASE;
+        I64 next = 0;
+        if k + 1 < nf && fo[k + 1] / MACHO_PAGE == fo[k] / MACHO_PAGE {
+            next = (fo[k + 1] - fo[k]) / 4;
+        }
+        asm.put64(img, off, (target & 0xFFFFFFFFF) | (next << 51));
+    }
+
+    FixHdr* fh = img[fx_off : fx_off + 32] as FixHdr*;
+    fh.starts_off = 32;
+    fh.imports_off = fx_imports as I32;
+    fh.symbols_off = fx_imports as I32;
+    fh.imports_format = 1;
+    asm.put32(img, fx_off + 32, nsegs);
+    asm.put32(img, fx_off + 32 + 4 + 2 * 4, fx_seg - 32);
+    FixSeg* fs = img[fx_off + fx_seg : fx_off + fx_seg + 24] as FixSeg*;
+    fs.size = (FIXSEG_HEAD + page_count * 2) as I32;
+    fs.psize = MACHO_PAGE as U16;
+    fs.pformat = PTR64_OFFSET_FORMAT as U16;
+    fs.segoff = textsz;
+    fs.pcount = page_count as U16;
+    for I64 p = 0; p < page_count; p++ {
+        asm.put16(img, fx_off + fx_seg + FIXSEG_HEAD + p * 2, PAGE_START_NONE);
+    }
+    for I64 k = 0; k < nf; k++ {
+        I64 pg = fo[k] / MACHO_PAGE;
+        if k == 0 || fo[k - 1] / MACHO_PAGE != pg {
+            asm.put16(img, fx_off + fx_seg + FIXSEG_HEAD + pg * 2, fo[k] - pg * MACHO_PAGE);
+        }
+    }
+
+    put32be(img, climit, CSMAGIC_SUPERBLOB);
+    put32be(img, climit + 4, sb_len);
+    put32be(img, climit + 8, 1);
+    put32be(img, climit + 12, CS_SLOT_CODEDIR);
+    put32be(img, climit + 16, 20);
+    I64 cd = climit + 20;
+
+    put32be(img, cd, CSMAGIC_CODEDIR);
+    put32be(img, cd + 4, cd_len);
+    put32be(img, cd + 8, CD_VERSION_EXECSEG);
+    put32be(img, cd + 12, CD_ADHOC);
+    put32be(img, cd + 16, hash_off);
+    put32be(img, cd + 20, cd_fixed);
+    put32be(img, cd + 24, 0);
+    put32be(img, cd + 28, npages);
+    put32be(img, cd + 32, climit);
+    asm.put8(img, cd + 36, 32);
+    asm.put8(img, cd + 37, CD_HASH_SHA256);
+    asm.put8(img, cd + 38, 0);
+    asm.put8(img, cd + 39, CD_PAGE_4K_LOG2);
+    put32be(img, cd + 40, 0);
+    put32be(img, cd + 44, 0);
+    put32be(img, cd + 48, 0);
+    put32be(img, cd + 52, 0);
+    put64be(img, cd + 56, 0);
+    put64be(img, cd + 64, 0);
+    put64be(img, cd + 72, textsz);
+    put64be(img, cd + 80, EXECSEG_MAIN_BINARY);
+    for I64 i = 0; i < identlen - 1; i++ {
+        img[cd + cd_fixed + i] = ident[i];
+    }
+    img[cd + cd_fixed + identlen - 1] = 0 as U8;
+
+    for I64 p = 0; p < npages; p++ {
+        I64 base = p * 4096;
+        I64 n = 4096;
+        if base + n > climit {
+            n = climit - base;
+        }
+        hash.sha256(img[base : base + n], n, img[cd + hash_off + p * 32 : cd + hash_off + p * 32 + 32]);
+    }
+
+    return img[0 : total];
+}

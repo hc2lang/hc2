@@ -1,0 +1,11 @@
+I64 start() {
+    return 2166136261;
+}
+
+I64 bytes(I64 h, U8* b) {
+    for I64 i = 0; i < b.len; i++ {
+        h = h ^ (b[i] as I64);
+        h = (h * 16777619) % 1099511627776;
+    }
+    return h;
+}

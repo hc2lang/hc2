@@ -1,0 +1,76 @@
+// The 16-bit menu, checked byte for byte: the boot chain runs before anything
+// can report on itself, so these encodings are read from the manual once and
+// then held here.
+import "hc2/asm";
+import "heap";
+
+U8* line(U8* a, U8* b) {
+    U8* r = heap.alloc(a.len + b.len + 1);
+    for I64 i = 0; i < a.len; i++ {
+        r[i] = a[i];
+    }
+    for I64 i = 0; i < b.len; i++ {
+        r[a.len + i] = b[i];
+    }
+    r[a.len + b.len] = '\n';
+    return r[0 : a.len + b.len + 1];
+}
+
+U0 dump(U8* src) {
+    asm.As* a = asm.as_new();
+    asm.assemble_file(a, src);
+    U8* d = "0123456789abcdef";
+    for I64 i = 0; i < a.tlen; i++ {
+        I64 v = a.text[i] as I64;
+        if i != 0 {
+            " ";
+        }
+        "%c%c", d[(v >> 4) & 15] as I64, d[v & 15] as I64;
+    }
+    "\n";
+}
+
+I32 main() {
+    U8* s = line("", ".bits16");
+    s = line(s, ".org 0x7c00");
+    s = line(s, "start:");
+    s = line(s, "  cli");
+    s = line(s, "  xor ax, ax");
+    s = line(s, "  mov ds, ax");
+    s = line(s, "  mov ss, ax");
+    s = line(s, "  mov sp, 0x7c00");
+    s = line(s, "  mov si, msg");
+    s = line(s, "  call puts");
+    s = line(s, "  jmp start");
+    s = line(s, "puts:");
+    s = line(s, "  lodsb");
+    s = line(s, "  ret");
+    s = line(s, "msg:");
+    s = line(s, "  .ascii \"hi\"");
+    dump(s);
+
+    U8* t = line("", ".bits16");
+    t = line(t, ".org 0x7e00");
+    t = line(t, "  in al, 0x92");
+    t = line(t, "  or al, 2");
+    t = line(t, "  out 0x92, al");
+    t = line(t, "  lgdt [gdtr]");
+    t = line(t, "  mov eax, cr0");
+    t = line(t, "  or eax, 0x80000001");
+    t = line(t, "  mov cr0, eax");
+    t = line(t, "  jmpf 0x08, lm");
+    t = line(t, "  mov dword ptr [0x7000], 0x12345678");
+    t = line(t, "  rep a32 movsd   # a comment, where no operand can follow");
+    t = line(t, "  mov word ptr [di], 0");
+    t = line(t, "  add di, 24");
+    t = line(t, "  cmp eax, 0x534d4150");
+    t = line(t, "  jne fail");
+    t = line(t, "lm:");
+    t = line(t, "fail:");
+    t = line(t, "gdtr:");
+    t = line(t, "  .word 23");
+    t = line(t, "  .long gdt");
+    t = line(t, "gdt:");
+    dump(t);
+    return 0;
+}

@@ -1,0 +1,32 @@
+import "heap";
+
+// A caller that knows the lifetime of everything above a mark can hand the
+// whole region back at once. Doing it in a loop is the point: without release
+// this runs the heap out, and with it the arena stands still.
+I32 main() {
+    I64 m = heap.mark();
+    for I64 i = 0; i < 4000; i++ {
+        U8* p = heap.alloc(1 << 16);
+        p[0] = 'x';
+        heap.release(m);
+    }
+    if heap.mark() != m {
+        "the arena moved\n";
+        return 1;
+    }
+
+    // What is below the mark is untouched by a release above it.
+    U8* keep = heap.alloc(4);
+    keep[0] = 'o';
+    keep[1] = 'k';
+    I64 after = heap.mark();
+    U8* tmp = heap.alloc(1 << 20);
+    tmp[0] = 'z';
+    heap.release(after);
+    if heap.mark() != after {
+        "the arena moved\n";
+        return 1;
+    }
+    "%c%c\n", keep[0] as I64, keep[1] as I64;
+    return 0;
+}

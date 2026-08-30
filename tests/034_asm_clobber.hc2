@@ -1,0 +1,9 @@
+I32 main() {
+    I64 v = 0;
+    asm {
+        MOV RBX, 42
+        MOV v, RBX
+    }
+    "v %d\n", v;
+    return 0;
+}

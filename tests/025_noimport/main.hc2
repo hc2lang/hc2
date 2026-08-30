@@ -1,0 +1,4 @@
+I32 main() {
+    geom.Pt v = geom.make(1, 2);
+    return 0;
+}

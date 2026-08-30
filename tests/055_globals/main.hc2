@@ -1,0 +1,27 @@
+import "counter";
+
+// A mutable global in this package too: they are per-package storage, and a
+// private one keeps its name to itself.
+I64 calls = 0;
+U8 flag = 0;
+
+I64 tick() {
+    calls = calls + 1;
+    counter.bump();
+    return counter.n;
+}
+
+I64 main() {
+    "%d %d\n", counter.n, calls;
+    tick();
+    tick();
+    "%d %d\n", counter.n, calls;
+    counter.set_step(10);
+    tick();
+    "%d %d\n", counter.n, calls;
+    counter.n = 0;                     // writable across the package boundary
+    "%d\n", counter.n;
+    flag = 1;
+    "%d\n", flag as I64;
+    return 0;
+}

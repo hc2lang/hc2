@@ -1,0 +1,6 @@
+I32 main() {
+    if 1 {
+        "no\n";
+    }
+    return 0;
+}

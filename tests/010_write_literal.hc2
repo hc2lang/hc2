@@ -1,0 +1,5 @@
+I32 main() {
+    U8* s = "world";
+    s[0] = 119;
+    return 0;
+}

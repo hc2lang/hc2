@@ -1,0 +1,40 @@
+struct Pt {
+    F64 x;
+    F64 y;
+}
+
+F64 gscale = 2.5;
+const F64 HALF = 0.5;
+const F64 TAB[3] = {1.5, 2.5, 3.5};
+F64 buf[2] = {0.25, 0.75};
+
+F64 dot(Pt* a, Pt* b) {
+    return a.x * b.x + a.y * b.y;
+}
+
+F64 sum(F64... xs) {
+    F64 s = 0.0;
+    for I64 i = 0; i < xs.len / 8; i++ {
+        s = s + xs[i];
+    }
+    return s;
+}
+
+I32 main() {
+    Pt a = {3.0, 4.0};
+    Pt b = {1.0, 0.5};
+    "%f\n", dot(&a, &b);
+    "%f\n", gscale * HALF;
+    F64 acc = 0.0;
+    for I64 i = 0; i < 3; i++ {
+        acc = acc + TAB[i];
+    }
+    "%f\n", acc;
+    buf[1] = buf[1] + buf[0];
+    "%f\n", buf[1];
+    "%f\n", sum(1.5, 2.25, 3.25);
+    "%f\n", sum();
+    gscale = gscale + 1.0;
+    "%f\n", gscale;
+    return 0;
+}

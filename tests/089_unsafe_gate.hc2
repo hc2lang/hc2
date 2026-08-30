@@ -1,0 +1,19 @@
+// reading a capability out of an unsafe union outside unsafe must not check
+struct W {
+    I64 a;
+    I64 h;
+    I64 ol;
+    I64 g;
+}
+
+unsafe union C {
+    W w;
+    U8* p;
+}
+
+U0 main() {
+    C c = {};
+    c.w.a = 1;
+    U8* p = c.p;
+    "%d\n", p.len;
+}

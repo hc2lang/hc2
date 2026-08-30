@@ -1,0 +1,166 @@
+
+U8* from_raw(I64 addr, I64 len) {
+    unsafe {
+        I64 h = addr - 16;
+        I64 h8 = addr - 8;
+        I64 one = 1;
+        asm {
+            LDR X9, h
+            LDR X10, len
+            STR X10, [X9]
+            LDR X9, h8
+            LDR X10, one
+            STR X10, [X9]
+        }
+        _Cap c = {};
+        c.w.addr = addr;
+        c.w.hdr = h | 1;
+        c.w.offlen = len << 32;
+        c.w.gen = 1;
+        return c.p;
+    }
+}
+
+I64 _sys1(I64 num, I64 a1) {
+    I64 r = 0;
+    asm {
+        LDR X8, num
+        LDR X0, a1
+        SVC 0
+        STR X0, r
+    }
+    return r;
+}
+
+I64 _sys3(I64 num, I64 a1, I64 a2, I64 a3) {
+    I64 r = 0;
+    asm {
+        LDR X8, num
+        LDR X0, a1
+        LDR X1, a2
+        LDR X2, a3
+        SVC 0
+        STR X0, r
+    }
+    return r;
+}
+
+I64 _sys6(I64 num, I64 a1, I64 a2, I64 a3, I64 a4, I64 a5, I64 a6) {
+    I64 r = 0;
+    asm {
+        LDR X8, num
+        LDR X0, a1
+        LDR X1, a2
+        LDR X2, a3
+        LDR X3, a4
+        LDR X4, a5
+        LDR X5, a6
+        SVC 0
+        STR X0, r
+    }
+    return r;
+}
+
+const I64 SYS_GETDENTS64 = 61;
+const I64 SYS_READ = 63;
+const I64 SYS_WRITE = 64;
+const I64 SYS_OPENAT = 56;
+const I64 SYS_CLOSE = 57;
+const I64 SYS_FSTAT = 80;
+const I64 SYS_MMAP = 222;
+const I64 SYS_MPROTECT = 226;
+const I64 SYS_EXIT = 93;
+const I64 SYS_MKDIRAT = 34;
+const I64 SYS_UNLINKAT = 35;
+const I64 SYS_FCHMODAT = 53;
+const I64 SYS_READLINKAT = 78;
+
+const I64 AT_FDCWD = -100;
+const I64 AT_REMOVEDIR = 512;
+const I64 PROT_READ = 1;
+const I64 PROT_WRITE = 2;
+const I64 MAP_PRIVATE = 2;
+const I64 MAP_ANONYMOUS = 32;
+const I64 O_RDONLY = 0;
+const I64 O_WRONLY = 1;
+const I64 O_CREAT = 64;
+const I64 O_TRUNC = 512;
+const I64 MODE_644 = 420;
+const I64 MODE_755 = 493;
+const I64 STAT_SIZE_AT = 48;
+const I64 DENT_NAME_AT = 19;
+
+const U8* OS = "linux";
+const U8* ARCH = "arm64";
+
+I64 mmap(I64 len) {
+    return _sys6(SYS_MMAP, 0, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+}
+
+I64 mprotect(I64 addr, I64 len, I64 prot) {
+    return _sys3(SYS_MPROTECT, addr, len, prot);
+}
+
+I64 open(U8* path) {
+    return _sys6(SYS_OPENAT, AT_FDCWD, path.addr, O_RDONLY, 0, 0, 0);
+}
+
+I64 create(U8* path) {
+    return _sys6(SYS_OPENAT, AT_FDCWD, path.addr, O_WRONLY | O_CREAT | O_TRUNC, MODE_644, 0, 0);
+}
+
+I64 close(I64 fd) {
+    return _sys1(SYS_CLOSE, fd);
+}
+
+I64 read(I64 fd, U8* buf) {
+    return _sys3(SYS_READ, fd, buf.addr, buf.len);
+}
+
+I64 write(I64 fd, U8* buf) {
+    return _sys3(SYS_WRITE, fd, buf.addr, buf.len);
+}
+
+I64 getdents(I64 fd, U8* buf) {
+    return _sys3(SYS_GETDENTS64, fd, buf.addr, buf.len);
+}
+
+I64 dent_nameoff() {
+    return DENT_NAME_AT;
+}
+
+I64 fsize(I64 fd) {
+    U8 st[128] = {};
+    U8* p = &st;
+    _sys3(SYS_FSTAT, fd, p.addr, 0);
+    I64 v = 0;
+    for I64 i = 7; i >= 0; i = i - 1 {
+        v = v * 256 + (p[STAT_SIZE_AT + i] as I64);
+    }
+    return v;
+}
+
+I64 mkdir(U8* path) {
+    return _sys6(SYS_MKDIRAT, AT_FDCWD, path.addr, MODE_755, 0, 0, 0);
+}
+
+I64 chmod(U8* path, I64 mode) {
+    return _sys6(SYS_FCHMODAT, AT_FDCWD, path.addr, mode, 0, 0, 0);
+}
+
+I64 unlink(U8* path) {
+    return _sys6(SYS_UNLINKAT, AT_FDCWD, path.addr, 0, 0, 0, 0);
+}
+
+I64 rmdir(U8* path) {
+    return _sys6(SYS_UNLINKAT, AT_FDCWD, path.addr, AT_REMOVEDIR, 0, 0, 0);
+}
+
+I64 self_path(U8* buf) {
+    U8* exe = "/proc/self/exe";
+    return _sys6(SYS_READLINKAT, AT_FDCWD, exe.addr, buf.addr, buf.len, 0, 0);
+}
+
+U0 exit(I64 code) {
+    _sys1(SYS_EXIT, code);
+}

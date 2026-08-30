@@ -1,0 +1,2232 @@
+import "hc2/ast";
+import "hc2/isa";
+import "hc2/isa/a64";
+import "heap";
+import "fmt";
+import "hash";
+import "hc2/diag";
+import "str";
+import "sys";
+import "rt";
+
+I64 tpack(I64 cls, I64 kind, I64 sid) {
+    return cls * 100000000 + kind * 1000000 + sid + 1;
+}
+
+I64 tp_cls(I64 x)  { return x / 100000000; }
+I64 tp_kind(I64 x) { return (x / 1000000) % 100; }
+I64 tp_sid(I64 x)  { return (x % 1000000) - 1; }
+const I64 TP_NONE  = 0;
+I64 TP_U0()    { return tpack(ast.CLS_SCALAR, ast.SK_U0, -1); }
+I64 TP_BOOL()  { return tpack(ast.CLS_SCALAR, ast.SK_BOOL, -1); }
+I64 TP_I64()   { return tpack(ast.CLS_SCALAR, ast.SK_I64, -1); }
+I64 TP_F64()   { return tpack(ast.CLS_SCALAR, ast.SK_F64, -1); }
+I64 TP_U8PTR() { return tpack(ast.CLS_SCALARP, ast.SK_U8, -1); }
+
+Bool tp_isint(I64 x) {
+    if tp_cls(x) != ast.CLS_SCALAR {
+        return false;
+    }
+    I64 k = tp_kind(x);
+    return k >= ast.SK_I8 && k <= ast.SK_U64;
+}
+
+Bool tp_isptr(I64 x) {
+    I64 c = tp_cls(x);
+    return c == ast.CLS_SCALARP || c == ast.CLS_STRUCTP;
+}
+
+U8* sk_name(I64 k) {
+    switch k {
+        case ast.SK_U0:   return "U0";
+        case ast.SK_BOOL: return "Bool";
+        case ast.SK_I8:   return "I8";
+        case ast.SK_I16:  return "I16";
+        case ast.SK_I32:  return "I32";
+        case ast.SK_I64:  return "I64";
+        case ast.SK_U8:   return "U8";
+        case ast.SK_U16:  return "U16";
+        case ast.SK_U32:  return "U32";
+        case ast.SK_F64:  return "F64";
+    }
+    return "U64";
+}
+
+struct Local {
+    I64 noff;
+    I64 nlen;
+    I64 cls;
+    I64 kind;
+    I64 sid;
+    I64 alen;
+    I64 dims;
+    I64 off;
+}
+
+const I64 ONLY_ALL = -1;
+const I64 ONLY_LAYOUTS = -2;
+
+struct Ck {
+    ast.Ast* t;
+    Local* ls;
+    I64 nls;
+    I64* marks;
+    I64 nmk;
+    I64 cur;
+    I64 fn;
+    I64 inloop;
+    I64 unsafe;
+    I64 sretok;
+    I64 hasheap;
+    I64 hasrt;
+    I64 libmode;
+    I64 only;
+    I64 flhead;
+    I64 fltail;
+    I64 isa;
+}
+
+Ck* ck_new(ast.Ast* t) {
+    Ck* c = heap.alloc(sizeof(Ck)) as Ck*;
+    c.t = t;
+    c.ls = heap.alloc(1024 * sizeof(Local)) as Local*;
+    c.nls = 0;
+    c.marks = heap.alloc(256 * sizeof(I64)) as I64*;
+    c.nmk = 0;
+    c.cur = 0;
+    c.fn = 0;
+    c.inloop = 0;
+    c.unsafe = 0;
+    c.sretok = 0;
+    c.hasheap = 0;
+    c.hasrt = 0;
+    c.libmode = 0;
+    c.only = ONLY_ALL;
+    c.isa = isa.X86;
+    c.flhead = 0;
+    c.fltail = 0;
+    return c;
+}
+
+U0 cerr(Ck* c, I64 n, U8* msg) {
+    ast.Ast* t = c.t;
+    "%s:%d:%d: error: %s\n", ast.file_path(t, ast.ng(t, n, ast.N_FID)), ast.nline(t, n), ast.ng(t, n, ast.N_COL), msg;
+    sys.exit(1);
+}
+
+U0 tp_print(Ck* c, I64 x) {
+    I64 cls = tp_cls(x);
+    if cls == 0 {
+        "untyped constant";
+    } else if cls == 1 {
+        "%s", sk_name(tp_kind(x));
+    } else if cls == 2 {
+        "%s*", sk_name(tp_kind(x));
+    } else if cls == 3 {
+        "%s", ast.nname(c.t, tp_sid(x));
+    } else if cls == ast.CLS_FN {
+        I64 sg = tp_sid(x);
+        tp_print(c, resolve_dty(c, sg));
+        "(";
+        I64 first = 1;
+        for I64 pp = ast.nb(c.t, sg); pp != 0; pp = ast.nnext(c.t, pp) {
+            if first == 0 {
+                ", ";
+            }
+            first = 0;
+            tp_print(c, resolve_dty(c, pp));
+        }
+        ")*";
+    } else {
+        "%s*", ast.nname(c.t, tp_sid(x));
+    }
+}
+
+U0 cerr_tt(Ck* c, I64 n, U8* msg, I64 have, I64 want) {
+    ast.Ast* t = c.t;
+    "%s:%d:%d: error: %s (have ", ast.file_path(t, ast.ng(t, n, ast.N_FID)), ast.nline(t, n), ast.ng(t, n, ast.N_COL), msg;
+    tp_print(c, have);
+    ", want ";
+    tp_print(c, want);
+    ")\n";
+    sys.exit(1);
+}
+
+I64 tp_size(Ck* c, I64 x) {
+    switch tp_cls(x) {
+        case 1:    return ast.sk_size(tp_kind(x));
+        case 2, 4: return 32;
+        case 3:    return ast.ng(c.t, tp_sid(x), ast.SDEF_SIZE);
+        case ast.CLS_FN: return 8;
+    }
+    return 0;
+}
+
+I64 find_top_in(Ck* c, I64 pkg, I64 kind, U8* name) {
+    ast.Ast* t = c.t;
+    for I64 d = t.top; d != 0; d = ast.nnext(t, d) {
+        if ast.nkind(t, d) == kind && ast.node_pkg(t, d) == pkg {
+            if str.eq(ast.nname(t, d), name) {
+                return d;
+            }
+        }
+    }
+    return 0;
+}
+
+I64 find_top(Ck* c, I64 at, I64 kind, U8* name) {
+    return find_top_in(c, ast.node_pkg(c.t, at), kind, name);
+}
+
+U0 chk_table(Ck* c, I64 g) {
+    ast.Ast* t = c.t;
+    if ast.ng(t, g, ast.GLOB_DONE) == 1 {
+        return;
+    }
+    ast.ns(t, g, ast.GLOB_DONE, 1);
+    I64 ty = resolve_dty(c, g);
+    I64 alen = 1;
+    for I64 d = ast.nc(t, g); d != 0; d = ast.nnext(t, d) {
+        chk_expr(c, d);
+        if ast.nkind(t, d) != ast.ND_NUM || ast.ng(t, d, ast.N_IVAL) <= 0 || ast.nop(t, d) == ast.NUM_F64 {
+            cerr(c, d, "a table length must be a positive constant");
+        }
+        alen = alen * ast.ng(t, d, ast.N_IVAL);
+    }
+    ast.ns(t, g, ast.N_DALEN, alen);
+    ast.ns(t, g, ast.GLOB_ESZ, tp_size(c, ty));
+    ast.ns(t, g, ast.GLOB_ECLS, tp_cls(ty));
+    if ast.nop(t, g) == ast.GLOB_MUT {
+        if tp_cls(ty) == ast.CLS_STRUCT {
+            for I64 f = ast.nb(t, tp_sid(ty)); f != 0; f = ast.nnext(t, f) {
+                if tp_cls(resolve_dty(c, f)) != 1 {
+                    cerr(c, f, "a mutable table's struct fields must be scalars");
+                }
+            }
+        } else if tp_cls(ty) != ast.CLS_SCALAR {
+            cerr(c, g, "a mutable table takes scalar or struct elements");
+        }
+        if ast.nb(t, g) == 0 {
+            return;
+        }
+    }
+    chk_init(c, g, ast.nb(t, g), ast.nc(t, g), ty);
+}
+
+U0 fold_global(Ck* c, I64 g, I64 at) {
+    ast.Ast* t = c.t;
+    if ast.ng(t, g, ast.GLOB_BUSY) == 1 {
+        cerr(c, at, "this constant is defined in terms of itself");
+    }
+    I64 want = resolve_dty(c, g);
+    I64 init = ast.na(t, g);
+    if ast.ng(t, g, ast.GLOB_DONE) != 1 {
+        ast.ns(t, g, ast.GLOB_BUSY, 1);
+        I64 got = chk_expr(c, init);
+        if got == TP_NONE {
+            adapt(c, init, want);
+        } else if got != want {
+            cerr_tt(c, g, "constant initializer type mismatch", got, want);
+        }
+        ast.ns(t, g, ast.GLOB_BUSY, 0);
+        ast.ns(t, g, ast.GLOB_DONE, 1);
+    }
+    I64 k = ast.nkind(t, init);
+    if k != ast.ND_NUM && k != ast.ND_STR {
+        cerr(c, g, "a constant needs a literal or a constant expression");
+    }
+    ast.ns(t, at, ast.N_KIND, k);
+    ast.ns(t, at, ast.N_IVAL, ast.ng(t, init, ast.N_IVAL));
+    ast.ns(t, at, ast.N_OP, ast.nop(t, init));
+    ast.ns(t, at, ast.N_NOFF, ast.ng(t, init, ast.N_NOFF));
+    ast.ns(t, at, ast.N_NLEN, ast.ng(t, init, ast.N_NLEN));
+    set_ty(c, at, want);
+}
+
+I64 chk_gvar(Ck* c, I64 g) {
+    ast.Ast* t = c.t;
+    I64 want = resolve_dty(c, g);
+    if tp_cls(want) != ast.CLS_SCALAR {
+        cerr(c, g, "a mutable global must be a scalar");
+    }
+    if ast.ng(t, g, ast.GLOB_DONE) != 1 {
+        ast.ns(t, g, ast.GLOB_DONE, 1);
+        I64 init = ast.na(t, g);
+        I64 got = chk_expr(c, init);
+        if got == TP_NONE {
+            adapt(c, init, want);
+        } else if got != want {
+            cerr_tt(c, g, "global initializer type mismatch", got, want);
+        }
+        if ast.nkind(t, init) != ast.ND_NUM {
+            cerr(c, g, "a mutable global needs a constant initializer");
+        }
+    }
+    return want;
+}
+
+I64 gvar_use(Ck* c, I64 at, I64 g) {
+    ast.Ast* t = c.t;
+    I64 ty = chk_gvar(c, g);
+    ast.ns(t, at, ast.N_KIND, ast.ND_GVAR);
+    ast.ns(t, at, ast.GVAR_G, g);
+    set_ty(c, at, ty);
+    return ty;
+}
+
+I64 imported_named(Ck* c, I64 at, U8* name) {
+    ast.Ast* t = c.t;
+    I64 me = ast.node_pkg(t, at);
+    for I64 i = 0; i < t.pnimp[me]; i++ {
+        I64 q = ast.pkg_imp(t, me, i);
+        if str.eq(ast.pkg_name(t, q), name) {
+            return q;
+        }
+    }
+    return -1;
+}
+
+I64 resolve_dty(Ck* c, I64 n) {
+    ast.Ast* t = c.t;
+    I64 cls = ast.ng(t, n, ast.N_DCLS);
+    I64 kind = ast.ng(t, n, ast.N_DKIND);
+    I64 sid = ast.ng(t, n, ast.N_DSID);
+    if cls == 3 || cls == 4 {
+        if sid < 0 {
+            U8* nm = ast.blob(t, ast.ng(t, n, ast.N_TNOFF), ast.ng(t, n, ast.N_TNLEN));
+            I64 dot = -1;
+            for I64 i = 0; i < nm.len; i++ {
+                if nm[i] == '.' {
+                    dot = i;
+                }
+            }
+            if dot < 0 {
+                sid = find_top(c, n, ast.ND_SDEF, nm);
+            } else {
+                U8* pn = nm[0 : dot];
+                U8* tn = nm[dot + 1 : nm.len];
+                I64 q = imported_named(c, n, pn);
+                if q < 0 {
+                    cerr(c, n, "package not imported");
+                }
+                if tn.len > 0 && tn[0] == '_' {
+                    cerr(c, n, "that type is private to its package");
+                }
+                sid = find_top_in(c, q, ast.ND_SDEF, tn);
+            }
+            if sid == 0 {
+                cerr(c, n, "unknown type");
+            }
+            ast.ns(t, n, ast.N_DSID, sid);
+        }
+    }
+    if cls == ast.CLS_FN {
+        if ast.nop(t, sid) == 0 {
+            I64 cn = sig_intern(c, sid);
+            ast.ns(t, cn, ast.N_OP, ast.SIG_CANON);
+            ast.ns(t, n, ast.N_DSID, cn);
+            sid = cn;
+        }
+    }
+    return tpack(cls, kind, sid);
+}
+
+Bool sig_eq(Ck* c, I64 a, I64 b) {
+    if resolve_dty(c, a) != resolve_dty(c, b) {
+        return false;
+    }
+    I64 pa = ast.nb(c.t, a);
+    I64 pb = ast.nb(c.t, b);
+    for pa != 0 && pb != 0 {
+        if resolve_dty(c, pa) != resolve_dty(c, pb) {
+            return false;
+        }
+        pa = ast.nnext(c.t, pa);
+        pb = ast.nnext(c.t, pb);
+    }
+    return pa == 0 && pb == 0;
+}
+
+I64 sig_hash_ty(Ck* c, I64 h, I64 ty) {
+    h = hash.bytes(h, fmt.dec(tp_cls(ty)));
+    h = hash.bytes(h, fmt.dec(tp_kind(ty)));
+    I64 cls = tp_cls(ty);
+    if cls == 3 || cls == 4 {
+        I64 sid = tp_sid(ty);
+        h = hash.bytes(h, ast.pkg_path(c.t, ast.node_pkg(c.t, sid)));
+        h = hash.bytes(h, ast.nname(c.t, sid));
+    }
+    if cls == ast.CLS_FN {
+        h = hash.bytes(h, fmt.dec(ast.ng(c.t, tp_sid(ty), ast.N_IVAL)));
+    }
+    return h;
+}
+
+I64 sig_intern(Ck* c, I64 m) {
+    ast.Ast* t = c.t;
+    for I64 sg = t.sighead; sg != 0; sg = ast.ng(t, sg, ast.N_D) {
+        if sig_eq(c, sg, m) {
+            return sg;
+        }
+    }
+    I64 h = hash.start();
+    h = sig_hash_ty(c, h, resolve_dty(c, m));
+    for I64 pp = ast.nb(t, m); pp != 0; pp = ast.nnext(t, pp) {
+        h = sig_hash_ty(c, h, resolve_dty(c, pp));
+    }
+    ast.ns(t, m, ast.N_IVAL, h);
+    ast.ns(t, m, ast.N_D, t.sighead);
+    t.sighead = m;
+    return m;
+}
+
+I64 fn_mint(Ck* c, I64 n, I64 f) {
+    ast.Ast* t = c.t;
+    if ast.ng(t, f, ast.FN_VARIADIC) == 1 {
+        cerr(c, n, "a variadic function has no pointer type");
+    }
+    I64 m = ast.node_new(t, ast.ND_SIG, ast.nline(t, n), ast.ng(t, n, ast.N_COL));
+    ast.ns(t, m, ast.N_DCLS, ast.ng(t, f, ast.N_DCLS));
+    ast.ns(t, m, ast.N_DKIND, ast.ng(t, f, ast.N_DKIND));
+    ast.ns(t, m, ast.N_TNOFF, ast.ng(t, f, ast.N_TNOFF));
+    ast.ns(t, m, ast.N_TNLEN, ast.ng(t, f, ast.N_TNLEN));
+    ast.ns(t, m, ast.N_DSID, ast.ng(t, f, ast.N_DSID));
+    I64 head = 0;
+    I64 tail = 0;
+    for I64 pp = ast.nb(t, f); pp != 0; pp = ast.nnext(t, pp) {
+        I64 q = ast.node_new(t, ast.ND_PARAM, ast.nline(t, pp), ast.ng(t, pp, ast.N_COL));
+        ast.ns(t, q, ast.N_DCLS, ast.ng(t, pp, ast.N_DCLS));
+        ast.ns(t, q, ast.N_DKIND, ast.ng(t, pp, ast.N_DKIND));
+        ast.ns(t, q, ast.N_TNOFF, ast.ng(t, pp, ast.N_TNOFF));
+        ast.ns(t, q, ast.N_TNLEN, ast.ng(t, pp, ast.N_TNLEN));
+        ast.ns(t, q, ast.N_DSID, ast.ng(t, pp, ast.N_DSID));
+        if head == 0 {
+            head = q;
+        } else {
+            ast.ns(t, tail, ast.N_NEXT, q);
+        }
+        tail = q;
+    }
+    ast.ns(t, m, ast.N_B, head);
+    I64 cn = sig_intern(c, m);
+    ast.ns(t, cn, ast.N_OP, ast.SIG_CANON);
+    ast.ns(t, n, ast.N_OP, ast.AOF_FN);
+    ast.ns(t, n, ast.ADDR_FN, f);
+    I64 ty = tpack(ast.CLS_FN, 0, cn);
+    set_ty(c, n, ty);
+    return ty;
+}
+
+I64 chk_indirect(Ck* c, I64 n, I64 sg) {
+    ast.Ast* t = c.t;
+    I64 p = ast.nb(t, sg);
+    for I64 a = ast.nb(t, n); a != 0; a = ast.nnext(t, a) {
+        if p == 0 {
+            cerr(c, n, "too many arguments");
+        }
+        I64 want = resolve_dty(c, p);
+        I64 have = chk_expr(c, a);
+        if have == TP_NONE {
+            adapt(c, a, want);
+        } else if have != want {
+            cerr_tt(c, a, "argument type mismatch", have, want);
+        }
+        p = ast.nnext(t, p);
+    }
+    if p != 0 {
+        cerr(c, n, "too few arguments");
+    }
+    I64 ret = resolve_dty(c, sg);
+    if tp_cls(ret) == ast.CLS_STRUCT && c.sretok == 0 {
+        cerr(c, n, "a struct-returning call must directly initialize a declaration");
+    }
+    ast.ns(t, n, ast.N_OP, ast.CALL_INDIR);
+    ast.ns(t, n, ast.CALL_FN, sg);
+    if ret_is_big(c, ret) {
+        ast.ns(t, n, ast.CALL_BIG, 1);
+    }
+    set_ty(c, n, ret);
+    return ret;
+}
+
+U0 layout_structs(Ck* c) {
+    ast.Ast* t = c.t;
+    for I64 d = t.top; d != 0; d = ast.nnext(t, d) {
+        if ast.nkind(t, d) == ast.ND_SDEF && ast.nop(t, d) == 0 {
+            I64 off = 0;
+            for I64 f = ast.nb(t, d); f != 0; f = ast.nnext(t, f) {
+                I64 ft = resolve_dty(c, f);
+                if tp_cls(ft) == ast.CLS_STRUCT {
+                    cerr(c, f, "struct-in-struct fields are not in the subset");
+                }
+                if ft == TP_U0() {
+                    cerr(c, f, "U0 field");
+                }
+                I64 sz = tp_size(c, ft);
+                I64 al = sz;
+                if al > 8 {
+                    al = 8;
+                }
+                off = (off + al - 1) / al * al;
+                ast.ns(t, f, ast.FDEF_OFF, off);
+                ast.ns(t, f, ast.FDEF_SIZE, sz);
+                off = off + sz;
+            }
+            ast.ns(t, d, ast.SDEF_SIZE, (off + 7) / 8 * 8);
+        }
+    }
+    for I64 d = t.top; d != 0; d = ast.nnext(t, d) {
+        if ast.nkind(t, d) == ast.ND_SDEF && ast.nop(t, d) == ast.SDEF_UNION {
+            I64 max = 0;
+            for I64 f = ast.nb(t, d); f != 0; f = ast.nnext(t, f) {
+                I64 ft = resolve_dty(c, f);
+                if ft == TP_U0() {
+                    cerr(c, f, "U0 field");
+                }
+                if ast.ng(t, d, ast.SDEF_UNSAFE) == 0 {
+                    if tp_cls(ft) == ast.CLS_SCALARP || tp_cls(ft) == ast.CLS_STRUCTP {
+                        cerr(c, f, "a union member cannot hold a capability");
+                    }
+                    if tp_cls(ft) == ast.CLS_FN {
+                        cerr(c, f, "a union member cannot hold a function");
+                    }
+                    if tp_cls(ft) == ast.CLS_STRUCT {
+                        I64 ms = tp_sid(ft);
+                        if ast.nop(t, ms) == 1 {
+                            cerr(c, f, "a union member must be a scalar or a struct");
+                        }
+                        for I64 mf = ast.nb(t, ms); mf != 0; mf = ast.nnext(t, mf) {
+                            if tp_cls(resolve_dty(c, mf)) != 1 {
+                                cerr(c, f, "a union member's struct must hold scalars only");
+                            }
+                        }
+                    }
+                }
+                I64 sz = tp_size(c, ft);
+                ast.ns(t, f, ast.FDEF_OFF, 0);
+                ast.ns(t, f, ast.FDEF_SIZE, sz);
+                if sz > max {
+                    max = sz;
+                }
+            }
+            ast.ns(t, d, ast.SDEF_SIZE, (max + 7) / 8 * 8);
+        }
+    }
+}
+
+I64 find_field(Ck* c, I64 sid, U8* name) {
+    ast.Ast* t = c.t;
+    for I64 f = ast.nb(t, sid); f != 0; f = ast.nnext(t, f) {
+        if str.eq(ast.nname(t, f), name) {
+            return f;
+        }
+    }
+    return 0;
+}
+
+U0 gate_union_member(Ck* c, I64 n, I64 sid, I64 fty) {
+    if ast.nop(c.t, sid) != 1 {
+        return;
+    }
+    I64 cls = tp_cls(fty);
+    if cls != 2 && cls != 4 && cls != 5 {
+        return;
+    }
+    if c.unsafe == 0 {
+        cerr(c, n, "a union's capability member needs an unsafe block");
+    }
+}
+
+I64 lk_find(Ck* c, U8* name) {
+    for I64 i = c.nls - 1; i >= 0; i = i - 1 {
+        Local* l = c.ls + i;
+        if str.eq(ast.blob(c.t, l.noff, l.nlen), name) {
+            return i + 1;
+        }
+    }
+    return 0;
+}
+
+I64 lk_add(Ck* c, I64 at, U8* name, I64 ty, I64 alen, I64 dims) {
+    I64 base = 0;
+    if c.nmk > 0 {
+        base = c.marks[c.nmk - 1];
+    }
+    for I64 i = base; i < c.nls; i = i + 1 {
+        Local* e = c.ls + i;
+        if str.eq(ast.blob(c.t, e.noff, e.nlen), name) {
+            cerr(c, at, "name already declared in this scope");
+        }
+    }
+    if c.nls >= 1024 {
+        diag.die("too many locals");
+    }
+    I64 size = 0;
+    if alen >= 0 {
+        size = alen * tp_size(c, ty);
+    } else {
+        size = tp_size(c, ty);
+    }
+    if size < 8 {
+        size = 8;
+    }
+    size = (size + 7) / 8 * 8;
+    c.cur = c.cur + size;
+    Local* l = c.ls + c.nls;
+    l.noff = ast.intern(c.t, name);
+    l.nlen = name.len;
+    l.cls = tp_cls(ty);
+    l.kind = tp_kind(ty);
+    l.sid = tp_sid(ty);
+    l.alen = alen;
+    l.dims = dims;
+    l.off = c.cur;
+    c.nls = c.nls + 1;
+    return c.nls;
+}
+
+U0 scope_push(Ck* c) {
+    c.marks[c.nmk] = c.nls;
+    c.nmk = c.nmk + 1;
+}
+
+U0 scope_pop(Ck* c) {
+    c.nmk = c.nmk - 1;
+    c.nls = c.marks[c.nmk];
+}
+
+Bool fits(I64 v, I64 k) {
+    if k == ast.SK_I8 {
+        return v >= -128 && v <= 127;
+    }
+    if k == ast.SK_U8 {
+        return v >= 0 && v <= 255;
+    }
+    if k == ast.SK_I16 {
+        return v >= -32768 && v <= 32767;
+    }
+    if k == ast.SK_U16 {
+        return v >= 0 && v <= 65535;
+    }
+    if k == ast.SK_I32 {
+        return v >= -2147483648 && v <= 2147483647;
+    }
+    if k == ast.SK_U32 {
+        return v >= 0 && v <= 4294967295;
+    }
+    if k == ast.SK_I64 {
+        return true;
+    }
+    if k == ast.SK_U64 {
+        return v >= 0;
+    }
+    return false;
+}
+
+U0 set_ty(Ck* c, I64 n, I64 ty) {
+    ast.ns(c.t, n, ast.N_TCLS, tp_cls(ty));
+    ast.ns(c.t, n, ast.N_TKIND, tp_kind(ty));
+    ast.ns(c.t, n, ast.N_TSID, tp_sid(ty));
+}
+
+I64 get_ty(Ck* c, I64 n) {
+    return tpack(ast.ng(c.t, n, ast.N_TCLS), ast.ng(c.t, n, ast.N_TKIND), ast.ng(c.t, n, ast.N_TSID));
+}
+
+U0 adapt(Ck* c, I64 n, I64 want) {
+    I64 have = get_ty(c, n);
+    if have == TP_NONE {
+        if ast.nkind(c.t, n) == ast.ND_NULL {
+            I64 cw = tp_cls(want);
+            if cw != 2 && cw != 4 && cw != 5 {
+                cerr(c, n, "null adapts only to pointer types");
+            }
+            set_ty(c, n, want);
+            return;
+        }
+        if tp_isint(want) == false {
+            cerr_tt(c, n, "type mismatch", have, want);
+        }
+        if fits(ast.ng(c.t, n, ast.N_IVAL), tp_kind(want)) == false {
+            cerr_tt(c, n, "constant does not fit", have, want);
+        }
+        set_ty(c, n, want);
+        return;
+    }
+    if have != want {
+        cerr_tt(c, n, "type mismatch", have, want);
+    }
+}
+
+I64 chk_bin(Ck* c, I64 n) {
+    ast.Ast* t = c.t;
+    I64 op = ast.nop(t, n);
+    I64 lhs = ast.na(t, n);
+    I64 rhs = ast.nb(t, n);
+    if ast.nkind(t, lhs) == ast.ND_NULL || ast.nkind(t, rhs) == ast.ND_NULL {
+        if op != ast.OP_EQ && op != ast.OP_NE {
+            cerr(c, n, "null compares only with == and !=");
+        }
+        I64 other = lhs;
+        I64 side = 2;
+        if ast.nkind(t, lhs) == ast.ND_NULL {
+            other = rhs;
+            side = 1;
+        }
+        if ast.nkind(t, other) == ast.ND_NULL {
+            cerr(c, n, "null compares against a pointer");
+        }
+        I64 ot = chk_expr(c, other);
+        I64 oc = tp_cls(ot);
+        if oc != 2 && oc != 4 && oc != 5 {
+            cerr(c, n, "null compares against a pointer");
+        }
+        ast.ns(t, n, ast.BIN_SIDE, side);
+        ast.ns(t, n, ast.BIN_CLS, oc);
+        set_ty(c, n, TP_BOOL());
+        return TP_BOOL();
+    }
+    I64 lt = chk_expr(c, ast.na(t, n));
+    I64 rt = chk_expr(c, ast.nb(t, n));
+    Bool cmp = op >= ast.OP_LT && op <= ast.OP_NE;
+
+    if op == ast.OP_LAND || op == ast.OP_LOR {
+        if lt != TP_BOOL() || rt != TP_BOOL() {
+            cerr(c, n, "&& and || need Bool operands");
+        }
+        set_ty(c, n, TP_BOOL());
+        return TP_BOOL();
+    }
+    if tp_isptr(lt) {
+        if op != ast.OP_ADD && op != ast.OP_SUB {
+            cerr(c, n, "pointers support only + and -");
+        }
+        if rt == TP_NONE {
+            adapt(c, ast.nb(t, n), TP_I64());
+        } else if tp_isint(rt) == false {
+            cerr(c, n, "pointer offset must be an integer");
+        }
+        I64 esz = 0;
+        if tp_cls(lt) == ast.CLS_STRUCTP {
+            esz = ast.ng(t, tp_sid(lt), ast.SDEF_SIZE);
+        } else {
+            esz = ast.sk_size(tp_kind(lt));
+        }
+        ast.ns(t, n, ast.BIN_ESZ, esz);
+        set_ty(c, n, lt);
+        return lt;
+    }
+    if tp_isptr(rt) {
+        cerr(c, n, "the pointer must be on the left of + and -");
+    }
+    if lt == TP_NONE && rt == TP_NONE {
+        I64 a = ast.ng(t, ast.na(t, n), ast.N_IVAL);
+        I64 b = ast.ng(t, ast.nb(t, n), ast.N_IVAL);
+        I64 r = 0;
+        if op == ast.OP_ADD {
+            r = a + b;
+        } else if op == ast.OP_SUB {
+            r = a - b;
+        } else if op == ast.OP_MUL {
+            r = a * b;
+        } else if op == ast.OP_DIV {
+            if b == 0 {
+                cerr(c, n, "division by zero");
+            }
+            r = a / b;
+        } else if op == ast.OP_MOD {
+            if b == 0 {
+                cerr(c, n, "division by zero");
+            }
+            r = a % b;
+        } else if op == ast.OP_SHL {
+            r = a << b;
+        } else if op == ast.OP_SHR {
+            r = a >> b;
+        } else if op == ast.OP_AND {
+            r = a & b;
+        } else if op == ast.OP_XOR {
+            r = a ^ b;
+        } else if op == ast.OP_OR {
+            r = a | b;
+        } else if op == ast.OP_LT {
+            if a < b {
+                r = 1;
+            }
+        } else if op == ast.OP_LE {
+            if a <= b {
+                r = 1;
+            }
+        } else if op == ast.OP_GT {
+            if a > b {
+                r = 1;
+            }
+        } else if op == ast.OP_GE {
+            if a >= b {
+                r = 1;
+            }
+        } else if op == ast.OP_EQ {
+            if a == b {
+                r = 1;
+            }
+        } else {
+            if a != b {
+                r = 1;
+            }
+        }
+        ast.ns(t, n, ast.N_KIND, ast.ND_NUM);
+        ast.ns(t, n, ast.N_IVAL, r);
+        if cmp {
+            ast.ns(t, n, ast.N_OP, ast.NUM_BOOL);
+            set_ty(c, n, TP_BOOL());
+            return TP_BOOL();
+        }
+        set_ty(c, n, TP_NONE);
+        return TP_NONE;
+    }
+    I64 ty = 0;
+    if lt == TP_NONE {
+        adapt(c, ast.na(t, n), rt);
+        ty = rt;
+    } else if rt == TP_NONE {
+        adapt(c, ast.nb(t, n), lt);
+        ty = lt;
+    } else if lt != rt {
+        cerr_tt(c, n, "mixed-type arithmetic (no implicit conversions; write the `as`)", lt, rt);
+    } else {
+        ty = lt;
+    }
+    if op == ast.OP_EQ || op == ast.OP_NE {
+        if tp_isint(ty) == false && ty != TP_BOOL() && ty != TP_F64() {
+            cerr(c, n, "==/!= needs integers, Bool, or F64");
+        }
+    } else if ty == TP_F64() {
+        if cmp == false && op != ast.OP_ADD && op != ast.OP_SUB && op != ast.OP_MUL && op != ast.OP_DIV {
+            cerr(c, n, "F64 supports + - * / and comparisons");
+        }
+    } else {
+        if tp_isint(ty) == false {
+            cerr(c, n, "arithmetic needs integer operands");
+        }
+    }
+    if op == ast.OP_DIV || op == ast.OP_MOD {
+        I64 r = ast.nb(t, n);
+        if ast.nkind(t, r) == ast.ND_NUM && ast.ng(t, r, ast.N_IVAL) == 0 && ast.nop(t, r) != ast.NUM_F64 {
+            cerr(c, n, "division by zero");
+        }
+    }
+    I64 ln = ast.na(t, n);
+    I64 rn = ast.nb(t, n);
+    if ast.nkind(t, ln) == ast.ND_NUM && ast.nkind(t, rn) == ast.ND_NUM && ty != TP_F64() {
+        I64 v = const_binop(c, n, op, ast.ng(t, ln, ast.N_IVAL), ast.ng(t, rn, ast.N_IVAL));
+        ast.ns(t, n, ast.N_KIND, ast.ND_NUM);
+        if cmp {
+            ast.ns(t, n, ast.N_IVAL, v);
+            ast.ns(t, n, ast.N_OP, ast.NUM_BOOL);
+            set_ty(c, n, TP_BOOL());
+            return TP_BOOL();
+        }
+        ast.ns(t, n, ast.N_IVAL, narrow_to(v, tp_kind(ty)));
+        set_ty(c, n, ty);
+        return ty;
+    }
+    if cmp {
+        set_ty(c, n, TP_BOOL());
+        return TP_BOOL();
+    }
+    set_ty(c, n, ty);
+    return ty;
+}
+
+I64 qualified_pkg(Ck* c, I64 n) {
+    return imported_named(c, n, ast.nname(c.t, ast.na(c.t, ast.na(c.t, n))));
+}
+
+I64 chk_expr(Ck* c, I64 n) {
+    ast.Ast* t = c.t;
+    I64 k = ast.nkind(t, n);
+
+    switch k {
+        case ast.ND_NUM:
+            if ast.nop(t, n) == 1 {
+                set_ty(c, n, TP_BOOL());
+                return TP_BOOL();
+            }
+            if ast.nop(t, n) == ast.NUM_F64 {
+                set_ty(c, n, TP_F64());
+                return TP_F64();
+            }
+            set_ty(c, n, TP_NONE);
+            return TP_NONE;
+        case ast.ND_STR:
+            set_ty(c, n, TP_U8PTR());
+            return TP_U8PTR();
+        case ast.ND_NULL:
+            set_ty(c, n, TP_NONE);
+            return TP_NONE;
+        case ast.ND_VAR:
+            I64 li = lk_find(c, ast.nname(t, n));
+            if li == 0 {
+                I64 g = find_top(c, n, ast.ND_GLOBAL, ast.nname(t, n));
+                if g != 0 {
+                    if ast.nc(t, g) != 0 {
+                        cerr(c, n, "a table is not a value; index it");
+                    }
+                    if ast.nop(t, g) == ast.GLOB_MUT {
+                        return gvar_use(c, n, g);
+                    }
+                    fold_global(c, g, n);
+                    return get_ty(c, n);
+                }
+                cerr(c, n, "undeclared variable");
+            }
+            Local* l = c.ls + (li - 1);
+            if l.alen >= 0 {
+                cerr(c, n, "an array is not a value; index it or take &");
+            }
+            ast.ns(t, n, ast.VAR_OFF, l.off);
+            I64 ty = tpack(l.cls, l.kind, l.sid);
+            set_ty(c, n, ty);
+            return ty;
+        case ast.ND_INDEX:
+            I64 depth = 0;
+            I64 b = n;
+            for ast.nkind(t, b) == ast.ND_INDEX {
+                depth = depth + 1;
+                b = ast.na(t, b);
+            }
+            I64 g = 0;
+            if ast.nkind(t, b) == ast.ND_VAR && lk_find(c, ast.nname(t, b)) == 0 {
+                g = find_top(c, b, ast.ND_GLOBAL, ast.nname(t, b));
+            } else if ast.nkind(t, b) == ast.ND_FIELD {
+                I64 pb = ast.na(t, b);
+                if ast.nkind(t, pb) == ast.ND_VAR && lk_find(c, ast.nname(t, pb)) == 0 {
+                    I64 q = imported_named(c, b, ast.nname(t, pb));
+                    if q >= 0 {
+                        if ast.nname(t, b)[0] == '_' {
+                            cerr(c, b, "that name is private to its package");
+                        }
+                        g = find_top_in(c, q, ast.ND_GLOBAL, ast.nname(t, b));
+                    }
+                }
+            }
+            {
+                if g != 0 && ast.nc(t, g) != 0 {
+                    chk_table(c, g);
+                    I64 ety = resolve_dty(c, g);
+                    I64 d = ast.nc(t, g);
+                    I64 nd = 0;
+                    for I64 x = d; x != 0; x = ast.nnext(t, x) {
+                        nd = nd + 1;
+                    }
+                    if depth != nd {
+                        cerr(c, n, "a table takes one subscript per dimension");
+                    }
+                    I64 chain[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+                    if depth > 8 {
+                        cerr(c, n, "too many subscripts");
+                    }
+                    I64 b2 = n;
+                    I64 ci = 0;
+                    for ast.nkind(t, b2) == ast.ND_INDEX {
+                        chain[ci] = b2;
+                        ci = ci + 1;
+                        b2 = ast.na(t, b2);
+                    }
+                    for I64 q = depth - 1; q >= 0; q = q - 1 {
+                        I64 node = chain[q];
+                        I64 dsz = ast.ng(t, d, ast.N_IVAL);
+                        I64 sub = ast.nb(t, node);
+                        I64 it = chk_expr(c, sub);
+                        if it == TP_NONE {
+                            if ast.ng(t, sub, ast.N_IVAL) < 0 || ast.ng(t, sub, ast.N_IVAL) >= dsz {
+                                cerr(c, node, "constant index out of bounds");
+                            }
+                            adapt(c, sub, TP_I64());
+                        } else if tp_isint(it) == false {
+                            cerr(c, node, "table index must be an integer");
+                        }
+                        ast.ns(t, node, ast.N_OP, ast.IDX_TABLE);
+                        ast.ns(t, node, ast.INDEX_G, g);
+                        ast.ns(t, node, ast.INDEX_DIM, dsz);
+                        ast.ns(t, node, ast.INDEX_ESZ, tp_size(c, ety));
+                        d = ast.nnext(t, d);
+                    }
+                    set_ty(c, n, ety);
+                    return ety;
+                }
+            }
+            if ast.nkind(t, b) == ast.ND_VAR {
+                I64 li = lk_find(c, ast.nname(t, b));
+                if li != 0 {
+                    Local* l = c.ls + (li - 1);
+                    if l.alen >= 0 {
+                        I64 chain[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+                        if depth > 8 {
+                            cerr(c, n, "too many subscripts");
+                        }
+                        I64 b2 = n;
+                        I64 i = 0;
+                        for ast.nkind(t, b2) == ast.ND_INDEX {
+                            chain[i] = b2;
+                            i = i + 1;
+                            b2 = ast.na(t, b2);
+                        }
+                        I64 ndim = 0;
+                        for I64 d = l.dims; d != 0; d = ast.nnext(t, d) {
+                            ndim = ndim + 1;
+                        }
+                        if depth != ndim {
+                            cerr(c, n, "an array takes one subscript per dimension");
+                        }
+                        I64 d = l.dims;
+                        for I64 q = depth - 1; q >= 0; q = q - 1 {
+                            I64 node = chain[q];
+                            I64 dsz = ast.ng(t, d, ast.N_IVAL);
+                            I64 sub = ast.nb(t, node);
+                            I64 it = chk_expr(c, sub);
+                            if it == TP_NONE {
+                                I64 iv = ast.ng(t, sub, ast.N_IVAL);
+                                if iv < 0 || iv >= dsz {
+                                    cerr(c, node, "constant index out of bounds");
+                                }
+                                adapt(c, sub, TP_I64());
+                            } else if tp_isint(it) == false {
+                                cerr(c, node, "array index must be an integer");
+                            }
+                            ast.ns(t, node, ast.N_OP, ast.IDX_LOCAL);
+                            ast.ns(t, node, ast.INDEX_OFF, l.off);
+                            ast.ns(t, node, ast.INDEX_DIM, dsz);
+                            ast.ns(t, node, ast.INDEX_KIND, l.kind);
+                            ast.ns(t, node, ast.INDEX_ESZ, tp_size(c, tpack(l.cls, l.kind, l.sid)));
+                            d = ast.nnext(t, d);
+                        }
+                        I64 ty = tpack(l.cls, l.kind, l.sid);
+                        set_ty(c, n, ty);
+                        return ty;
+                    }
+                }
+            }
+            I64 base = ast.na(t, n);
+            I64 bt = chk_expr(c, base);
+            if tp_cls(bt) != ast.CLS_SCALARP {
+                cerr(c, n, "indexing needs an array or a pointer to a scalar");
+            }
+            I64 it = chk_expr(c, ast.nb(t, n));
+            if it == TP_NONE {
+                adapt(c, ast.nb(t, n), TP_I64());
+            } else if tp_isint(it) == false {
+                cerr(c, n, "index must be an integer");
+            }
+            ast.ns(t, n, ast.N_OP, ast.IDX_CAP);
+            ast.ns(t, n, ast.INDEX_KIND, tp_kind(bt));
+            ast.ns(t, n, ast.INDEX_ESZ, ast.sk_size(tp_kind(bt)));
+            I64 ty = tpack(ast.CLS_SCALAR, tp_kind(bt), -1);
+            set_ty(c, n, ty);
+            return ty;
+        case ast.ND_SLICE:
+            I64 bt = chk_expr(c, ast.na(t, n));
+            if tp_cls(bt) != ast.CLS_SCALARP {
+                cerr(c, n, "narrowing needs a pointer to a scalar");
+            }
+            I64 lo = chk_expr(c, ast.nb(t, n));
+            if lo == TP_NONE {
+                adapt(c, ast.nb(t, n), TP_I64());
+            } else if tp_isint(lo) == false {
+                cerr(c, n, "slice bound must be an integer");
+            }
+            I64 hi = chk_expr(c, ast.nc(t, n));
+            if hi == TP_NONE {
+                adapt(c, ast.nc(t, n), TP_I64());
+            } else if tp_isint(hi) == false {
+                cerr(c, n, "slice bound must be an integer");
+            }
+            ast.ns(t, n, ast.SLICE_ESZ, ast.sk_size(tp_kind(bt)));
+            set_ty(c, n, bt);
+            return bt;
+        case ast.ND_FIELD:
+            I64 base = ast.na(t, n);
+            U8* fname = ast.nname(t, n);
+            if ast.nkind(t, base) == ast.ND_VAR {
+                I64 li = lk_find(c, ast.nname(t, base));
+                if li != 0 {
+                    Local* l = c.ls + (li - 1);
+                    if l.alen < 0 && l.cls == ast.CLS_STRUCT {
+                        I64 f = find_field(c, l.sid, fname);
+                        if f == 0 {
+                            cerr(c, n, "no such field");
+                        }
+                        if fname[0] == '_' && ast.node_pkg(t, l.sid) != ast.node_pkg(t, n) {
+                            cerr(c, n, "that field is private to its package");
+                        }
+                        ast.ns(t, n, ast.FIELD_MODE, ast.FM_DIRECT);
+                        ast.ns(t, n, ast.FIELD_BASE, l.off);
+                        ast.ns(t, n, ast.FIELD_OFF, ast.ng(t, f, ast.FDEF_OFF));
+                        ast.ns(t, n, ast.FIELD_SIZE, ast.ng(t, f, ast.FDEF_SIZE));
+                        I64 ty = resolve_dty(c, f);
+                        gate_union_member(c, n, l.sid, ty);
+                        set_ty(c, n, ty);
+                        return ty;
+                    }
+                }
+            }
+            if ast.nkind(t, base) == ast.ND_VAR && lk_find(c, ast.nname(t, base)) == 0 {
+                I64 q = imported_named(c, n, ast.nname(t, base));
+                if q >= 0 {
+                    if fname[0] == '_' {
+                        cerr(c, n, "that name is private to its package");
+                    }
+                    I64 g = find_top_in(c, q, ast.ND_GLOBAL, fname);
+                    if g != 0 {
+                        if ast.nc(t, g) != 0 {
+                            cerr(c, n, "a table is not a value; index it");
+                        }
+                        if ast.nop(t, g) == ast.GLOB_MUT {
+                            return gvar_use(c, n, g);
+                        }
+                        fold_global(c, g, n);
+                        return get_ty(c, n);
+                    }
+                }
+            }
+            I64 bt = chk_expr(c, base);
+            if tp_cls(bt) == ast.CLS_STRUCT {
+                I64 f = find_field(c, tp_sid(bt), fname);
+                if f == 0 {
+                    cerr(c, n, "no such field");
+                }
+                if fname[0] == '_' && ast.node_pkg(t, tp_sid(bt)) != ast.node_pkg(t, n) {
+                    cerr(c, n, "that field is private to its package");
+                }
+                ast.ns(t, n, ast.FIELD_MODE, ast.FM_ADDR);
+                ast.ns(t, n, ast.FIELD_OFF, ast.ng(t, f, ast.FDEF_OFF));
+                ast.ns(t, n, ast.FIELD_SIZE, ast.ng(t, f, ast.FDEF_SIZE));
+                I64 ty = resolve_dty(c, f);
+                gate_union_member(c, n, tp_sid(bt), ty);
+                set_ty(c, n, ty);
+                return ty;
+            }
+            if tp_cls(bt) == ast.CLS_FN {
+                if str.eq(fname, "addr") {
+                    ast.ns(t, n, ast.N_OP, ast.FLD_FNADDR);
+                    set_ty(c, n, TP_I64());
+                    return TP_I64();
+                }
+                cerr(c, n, "a function value has only .addr");
+            }
+            if tp_isptr(bt) {
+                I64 f = 0;
+                if tp_cls(bt) == ast.CLS_STRUCTP {
+                    f = find_field(c, tp_sid(bt), fname);
+                }
+                if f == 0 {
+                    I64 iop = 0;
+                    if str.eq(fname, "len") {
+                        iop = ast.FLD_LEN;
+                    }
+                    if str.eq(fname, "addr") {
+                        iop = ast.FLD_CADDR;
+                    }
+                    if str.eq(fname, "lo") {
+                        iop = ast.FLD_LO;
+                    }
+                    if str.eq(fname, "gen") {
+                        iop = ast.FLD_GEN;
+                    }
+                    if str.eq(fname, "hdr") {
+                        iop = ast.FLD_HDR;
+                    }
+                    if iop != 0 {
+                        ast.ns(t, n, ast.N_OP, iop);
+                        set_ty(c, n, TP_I64());
+                        return TP_I64();
+                    }
+                }
+                if tp_cls(bt) != ast.CLS_STRUCTP {
+                    cerr(c, n, "field access needs a struct or a struct pointer");
+                }
+                if f == 0 {
+                    cerr(c, n, "no such field");
+                }
+                if fname[0] == '_' && ast.node_pkg(t, tp_sid(bt)) != ast.node_pkg(t, n) {
+                    cerr(c, n, "that field is private to its package");
+                }
+                ast.ns(t, n, ast.FIELD_MODE, ast.FM_PTR);
+                ast.ns(t, n, ast.FIELD_OFF, ast.ng(t, f, ast.FDEF_OFF));
+                ast.ns(t, n, ast.FIELD_SIZE, ast.ng(t, f, ast.FDEF_SIZE));
+                I64 ty = resolve_dty(c, f);
+                gate_union_member(c, n, tp_sid(bt), ty);
+                set_ty(c, n, ty);
+                return ty;
+            }
+            cerr(c, n, "field access needs a struct or a struct pointer");
+        case ast.ND_ADDR:
+            I64 base = ast.na(t, n);
+            if ast.nkind(t, base) == ast.ND_FIELD {
+                I64 pb = ast.na(t, base);
+                if ast.nkind(t, pb) == ast.ND_VAR && lk_find(c, ast.nname(t, pb)) == 0 {
+                    I64 q = imported_named(c, base, ast.nname(t, pb));
+                    if q >= 0 {
+                        U8* fnm = ast.nname(t, base);
+                        if fnm[0] == '_' {
+                            cerr(c, n, "that name is private to its package");
+                        }
+                        I64 fx = find_top_in(c, q, ast.ND_FN, fnm);
+                        if fx != 0 {
+                            return fn_mint(c, n, fx);
+                        }
+                    }
+                }
+            }
+            if ast.nkind(t, base) != ast.ND_VAR {
+                cerr(c, n, "& takes a variable");
+            }
+            I64 li = lk_find(c, ast.nname(t, base));
+            if li == 0 {
+                I64 g = find_top(c, base, ast.ND_GLOBAL, ast.nname(t, base));
+                if g != 0 && ast.nc(t, g) != 0 {
+                    chk_table(c, g);
+                    if ast.nop(t, g) != ast.GLOB_MUT {
+                        cerr(c, n, "& of a const table is not in the subset");
+                    }
+                    if ast.ng(t, g, ast.GLOB_ECLS) == ast.CLS_STRUCT {
+                        cerr(c, n, "& of a struct table is not in the subset");
+                    }
+                    ast.ns(t, n, ast.N_OP, ast.AOF_TABLE);
+                    ast.ns(t, n, ast.ADDR_G, g);
+                    ast.ns(t, n, ast.ADDR_LEN, ast.ng(t, g, ast.N_DALEN) * ast.ng(t, g, ast.GLOB_ESZ));
+                    I64 ty = tpack(ast.CLS_SCALARP, ast.ng(t, g, ast.N_DKIND), -1);
+                    set_ty(c, n, ty);
+                    return ty;
+                }
+                I64 fx = find_top(c, base, ast.ND_FN, ast.nname(t, base));
+                if fx != 0 {
+                    return fn_mint(c, n, fx);
+                }
+                cerr(c, n, "undeclared variable");
+            }
+            Local* l = c.ls + (li - 1);
+            ast.ns(t, n, ast.ADDR_OFF, l.off);
+            I64 ty = 0;
+            if l.alen >= 0 {
+                ast.ns(t, n, ast.ADDR_LEN, l.alen * tp_size(c, tpack(l.cls, l.kind, l.sid)));
+                ty = tpack(ast.CLS_SCALARP, l.kind, -1);
+            } else if l.cls == ast.CLS_STRUCT {
+                ast.ns(t, n, ast.ADDR_LEN, ast.ng(t, l.sid, ast.SDEF_SIZE));
+                ty = tpack(ast.CLS_STRUCTP, 0, l.sid);
+            } else if l.cls == 1 {
+                ast.ns(t, n, ast.ADDR_LEN, ast.sk_size(l.kind));
+                ty = tpack(ast.CLS_SCALARP, l.kind, -1);
+            } else {
+                cerr(c, n, "& of a pointer variable is not in the subset");
+            }
+            set_ty(c, n, ty);
+            return ty;
+        case ast.ND_AS:
+            I64 want = resolve_dty(c, n);
+            I64 have = chk_expr(c, ast.na(t, n));
+            if have == TP_NONE {
+                if ast.nkind(t, ast.na(t, n)) == ast.ND_NULL {
+                    cerr(c, n, "null does not cast; it adapts to the pointer type it meets");
+                }
+                if tp_isint(want) == false {
+                    cerr(c, n, "an untyped constant casts only to integer types");
+                }
+                I64 v = ast.ng(t, ast.na(t, n), ast.N_IVAL);
+                I64 sz = ast.sk_size(tp_kind(want));
+                if sz < 8 {
+                    I64 bits = sz * 8;
+                    I64 m = (1 << bits) - 1;
+                    I64 u = v & m;
+                    if ast.sk_signed(tp_kind(want)) && (u >> (bits - 1)) != 0 {
+                        v = u - (m + 1);
+                    } else {
+                        v = u;
+                    }
+                }
+                ast.ns(t, n, ast.N_KIND, ast.ND_NUM);
+                ast.ns(t, n, ast.N_IVAL, v);
+                set_ty(c, n, want);
+                return want;
+            }
+            if tp_cls(have) == ast.CLS_SCALAR && tp_cls(want) == ast.CLS_SCALAR {
+                if tp_kind(have) == ast.SK_BOOL || tp_kind(want) == ast.SK_BOOL {
+                    cerr(c, n, "Bool does not cast");
+                }
+                if tp_kind(have) == ast.SK_U0 || tp_kind(want) == ast.SK_U0 {
+                    cerr(c, n, "U0 does not cast");
+                }
+                if tp_kind(have) == ast.SK_U64 && tp_kind(want) == ast.SK_F64 {
+                    cerr(c, n, "U64 does not cast to F64");
+                }
+                if tp_kind(have) == ast.SK_F64 && tp_kind(want) == ast.SK_U64 {
+                    cerr(c, n, "F64 does not cast to U64");
+                }
+                set_ty(c, n, want);
+                return want;
+            }
+            if tp_isptr(have) && tp_isptr(want) {
+                set_ty(c, n, want);
+                return want;
+            }
+            cerr(c, n, "as casts scalars to scalars or pointers to pointers (never pointer<->integer)");
+        case ast.ND_SIZEOF:
+            I64 ty = resolve_dty(c, n);
+            ast.ns(t, n, ast.N_KIND, ast.ND_NUM);
+            ast.ns(t, n, ast.N_IVAL, tp_size(c, ty));
+            set_ty(c, n, TP_NONE);
+            return TP_NONE;
+        case ast.ND_NEG:
+            I64 ty = chk_expr(c, ast.na(t, n));
+            I64 a0 = ast.na(t, n);
+            if ast.nkind(t, a0) == ast.ND_NUM && ast.nop(t, a0) == ast.NUM_F64 {
+                ast.ns(t, n, ast.N_KIND, ast.ND_NUM);
+                ast.ns(t, n, ast.N_OP, ast.NUM_F64);
+                ast.ns(t, n, ast.N_IVAL, ast.ng(t, a0, ast.N_IVAL) ^ (1 << 63));
+                set_ty(c, n, TP_F64());
+                return TP_F64();
+            }
+            if ty == TP_NONE {
+                ast.ns(t, n, ast.N_KIND, ast.ND_NUM);
+                ast.ns(t, n, ast.N_IVAL, -ast.ng(t, ast.na(t, n), ast.N_IVAL));
+                set_ty(c, n, TP_NONE);
+                return TP_NONE;
+            }
+            if tp_isint(ty) == false && ty != TP_F64() {
+                cerr(c, n, "unary minus needs an integer or an F64");
+            }
+            set_ty(c, n, ty);
+            return ty;
+        case ast.ND_BIN:
+            return chk_bin(c, n);
+        case ast.ND_CALL:
+            I64 callee = ast.na(t, n);
+            I64 f = 0;
+            if ast.nkind(t, callee) == ast.ND_VAR && lk_find(c, ast.nname(t, callee)) != 0 {
+                I64 ct = chk_expr(c, callee);
+                if tp_cls(ct) != ast.CLS_FN {
+                    cerr(c, n, "calls take a function name or a function value");
+                }
+                return chk_indirect(c, n, tp_sid(ct));
+            }
+            if ast.nkind(t, callee) == ast.ND_FIELD {
+                I64 base = ast.na(t, callee);
+                if ast.nkind(t, base) == ast.ND_VAR && lk_find(c, ast.nname(t, base)) == 0 {
+                    if imported_named(c, callee, ast.nname(t, base)) < 0 {
+                        cerr(c, n, "package not imported");
+                    }
+                    I64 q = qualified_pkg(c, n);
+                    U8* fnm = ast.nname(t, callee);
+                    if fnm[0] == '_' {
+                        cerr(c, n, "that name is private to its package");
+                    }
+                    f = find_top_in(c, q, ast.ND_FN, fnm);
+                    if f == 0 {
+                        cerr(c, n, "unknown function in package");
+                    }
+                } else {
+                    I64 ct = chk_expr(c, callee);
+                    if tp_cls(ct) != ast.CLS_FN {
+                        cerr(c, n, "calls take a function name or a function value");
+                    }
+                    return chk_indirect(c, n, tp_sid(ct));
+                }
+            } else if ast.nkind(t, callee) == ast.ND_VAR {
+                f = find_top(c, n, ast.ND_FN, ast.nname(t, callee));
+                if f == 0 {
+                    cerr(c, n, "unknown function");
+                }
+            } else {
+                I64 ct = chk_expr(c, callee);
+                if tp_cls(ct) != ast.CLS_FN {
+                    cerr(c, n, "calls take a function name or a function value");
+                }
+                return chk_indirect(c, n, tp_sid(ct));
+            }
+            ast.ns(t, n, ast.CALL_FN, f);
+            I64 variadic = ast.ng(t, f, ast.FN_VARIADIC);
+            I64 ety = TP_NONE;
+            if variadic == 1 {
+                ety = tpack(ast.CLS_SCALAR, ast.ng(t, f, ast.FN_VKIND), -1);
+            }
+            I64 i = 0;
+            I64 p = ast.nb(t, f);
+            I64 vcount = 0;
+            for I64 a = ast.nb(t, n); a != 0; a = ast.nnext(t, a) {
+                if p == 0 || (variadic == 1 && ast.nop(t, p) == ast.PARAM_VARARG) {
+                    if variadic == 0 {
+                        cerr(c, n, "too many arguments");
+                    }
+                    I64 have = chk_expr(c, a);
+                    if have == TP_NONE {
+                        adapt(c, a, ety);
+                    } else if have != ety {
+                        cerr_tt(c, a, "variadic argument type mismatch", have, ety);
+                    }
+                    vcount = vcount + 1;
+                    i = i + 1;
+                    continue;
+                }
+                I64 want = resolve_dty(c, p);
+                I64 have = chk_expr(c, a);
+                if have == TP_NONE {
+                    adapt(c, a, want);
+                } else if have != want {
+                    cerr_tt(c, a, "argument type mismatch", have, want);
+                }
+                i = i + 1;
+                p = ast.nnext(t, p);
+            }
+            if variadic == 1 && p != 0 && ast.nop(t, p) == 1 {
+                p = 0;
+            }
+            if p != 0 {
+                cerr(c, n, "too few arguments");
+            }
+            if variadic == 1 {
+                I64 esz = ast.sk_size(ast.ng(t, f, ast.FN_VKIND));
+                I64 bytes = vcount * esz;
+                I64 slot = bytes;
+                if slot < 8 {
+                    slot = 8;
+                }
+                slot = (slot + 7) / 8 * 8;
+                c.cur = c.cur + slot;
+                ast.ns(t, n, ast.CALL_VOFF, c.cur);
+                ast.ns(t, n, ast.CALL_VCNT, vcount);
+                ast.ns(t, n, ast.CALL_VESZ, esz);
+            }
+            I64 ret = resolve_dty(c, f);
+            if tp_cls(ret) == ast.CLS_STRUCT && c.sretok == 0 {
+                cerr(c, n, "a struct-returning call must directly initialize a declaration");
+            }
+            set_ty(c, n, ret);
+            return ret;
+        case ast.ND_ILIST:
+            cerr(c, n, "unexpected braces");
+    }
+    cerr(c, n, "internal: bad expression node");
+    return TP_NONE;
+}
+
+U0 chk_init(Ck* c, I64 at, I64 items, I64 dim, I64 ety) {
+    ast.Ast* t = c.t;
+    I64 dsz = ast.ng(t, dim, ast.N_IVAL);
+    I64 inner = ast.nnext(t, dim);
+    I64 cnt = 0;
+    for I64 e = items; e != 0; e = ast.nnext(t, e) {
+        cnt = cnt + 1;
+        if inner != 0 {
+            if ast.nkind(t, e) != ast.ND_ILIST {
+                cerr(c, e, "this dimension needs braces");
+            }
+            chk_init(c, e, ast.nb(t, e), inner, ety);
+            continue;
+        }
+        if tp_cls(ety) == ast.CLS_STRUCT {
+            if ast.nop(t, tp_sid(ety)) == 1 {
+                cerr(c, e, "a union has no literal form");
+            }
+            if ast.nkind(t, e) != ast.ND_ILIST {
+                cerr(c, e, "a struct element needs braces");
+            }
+            I64 f = ast.nb(t, tp_sid(ety));
+            for I64 fe = ast.nb(t, e); fe != 0; fe = ast.nnext(t, fe) {
+                if f == 0 {
+                    cerr(c, fe, "too many fields in struct literal");
+                }
+                I64 want = resolve_dty(c, f);
+                I64 ft = chk_expr(c, fe);
+                if ft == TP_NONE {
+                    adapt(c, fe, want);
+                } else if ft != want {
+                    cerr_tt(c, fe, "field type mismatch", ft, want);
+                }
+                f = ast.nnext(t, f);
+            }
+            if f != 0 {
+                cerr(c, e, "struct literal must initialize every field");
+            }
+            continue;
+        }
+        if ast.nkind(t, e) == ast.ND_ILIST {
+            cerr(c, e, "too many braces");
+        }
+        if tp_cls(ety) == ast.CLS_FN && ast.nkind(t, e) != ast.ND_ADDR && ast.nkind(t, e) != ast.ND_NULL {
+            cerr(c, e, "a table slot takes &function or null");
+        }
+        I64 et = chk_expr(c, e);
+        if et == TP_NONE {
+            adapt(c, e, ety);
+        } else if et != ety {
+            cerr_tt(c, e, "array element type mismatch", et, ety);
+        }
+    }
+    if cnt != dsz {
+        cerr(c, at, "initializer count must match the array length");
+    }
+}
+
+U0 chk_asm(Ck* c, I64 n) {
+    ast.Ast* t = c.t;
+    I64 clob = 0;
+    for I64 ins = ast.na(t, n); ins != 0; ins = ast.nnext(t, ins) {
+        U8* m = ast.nname(t, ins);
+        if ast.nop(t, ins) == 1 {
+            for I64 o = ast.na(t, n); o != ins; o = ast.nnext(t, o) {
+                if ast.nop(t, o) == 1 && str.eq(ast.nname(t, o), m) {
+                    cerr(c, ins, "label already defined in this block");
+                }
+            }
+            continue;
+        }
+        I64 grade = isa.isa_grade(m);
+        if grade == isa.GR_FRAME {
+            cerr(c, ins, "the compiler owns the frame: no RET or LEAVE in an asm block");
+        }
+        I64 idx = 0;
+        for I64 o = ast.nb(t, ins); o != 0; o = ast.nnext(t, o) {
+            I64 kind = ast.nop(t, o);
+            if kind == isa.OP_MEM {
+                if c.unsafe == 0 {
+                    cerr(c, o, "memory operand: a load or store here would be the one the compiler did not check");
+                }
+                U8* mt = ast.nname(t, o);
+                for I64 i = 0; i + 1 < mt.len; i++ {
+                    I64 c1 = mt[i] as I64;
+                    I64 c2 = mt[i + 1] as I64;
+                    if c1 >= 'A' && c1 <= 'Z' {
+                        c1 = c1 - 'A' + 'a';
+                    }
+                    if c2 >= 'A' && c2 <= 'Z' {
+                        c2 = c2 - 'A' + 'a';
+                    }
+                    if (c1 == 's' || c1 == 'b') && c2 == 'p' {
+                        cerr(c, o, "RSP and RBP belong to the compiler");
+                    }
+                }
+            }
+            if kind == isa.OP_REG {
+                I64 r = ast.ng(t, o, ast.N_IVAL);
+                I64 ri = isa.reg_idx(r);
+                if c.isa == 2 {
+                    if ri == a64.REG_SP || ri == a64.REG_FP {
+                        cerr(c, o, "SP and X29 belong to the compiler");
+                    }
+                } else {
+                    if ri == 4 || ri == 5 {
+                        cerr(c, o, "RSP and RBP belong to the compiler");
+                    }
+                    if idx == 0 {
+                        clob = clob | isa.isa_callee_saved_bit(r);
+                    }
+                }
+            }
+            if kind == isa.OP_VAR {
+                U8* nm = ast.nname(t, o);
+                I64 li = lk_find(c, nm);
+                if li == 0 {
+                    cerr(c, o, "undeclared variable");
+                }
+                Local* l = c.ls + (li - 1);
+                if l.alen >= 0 || l.cls != 1 {
+                    cerr(c, o, "an asm operand must be a scalar variable (use p.addr for a pointer)");
+                }
+                ast.ns(t, o, ast.AOP_OFF, l.off);
+                ast.ns(t, o, ast.AOP_SIZE, ast.sk_size(l.kind));
+            }
+            if kind == isa.OP_LABEL {
+                U8* nm = ast.nname(t, o);
+                I64 found = 0;
+                for I64 d = ast.na(t, n); d != 0; d = ast.nnext(t, d) {
+                    if ast.nop(t, d) == 1 && str.eq(ast.nname(t, d), nm) {
+                        found = 1;
+                    }
+                }
+                if found == 0 {
+                    cerr(c, o, "no such label in this block");
+                }
+            }
+            idx = idx + 1;
+        }
+        if c.isa == 2 {
+            I64 nv = 0;
+            for I64 o = ast.nb(t, ins); o != 0; o = ast.nnext(t, o) {
+                if ast.nop(t, o) == isa.OP_VAR {
+                    nv = nv + 1;
+                }
+            }
+            if nv > 1 {
+                cerr(c, ins, "at most one operand may be a variable");
+            }
+            continue;
+        }
+        I64 nvar = 0;
+        I64 nmem = 0;
+        I64 rsize = 0;
+        for I64 o = ast.nb(t, ins); o != 0; o = ast.nnext(t, o) {
+            if ast.nop(t, o) == isa.OP_VAR {
+                nvar = nvar + 1;
+            }
+            if ast.nop(t, o) == isa.OP_MEM {
+                nmem = nmem + 1;
+            }
+            if ast.nop(t, o) == isa.OP_REG {
+                rsize = isa.reg_size(ast.ng(t, o, ast.N_IVAL));
+            }
+        }
+        if nvar > 1 {
+            cerr(c, ins, "at most one operand may be a variable");
+        }
+        if nmem > 0 && nvar > 0 {
+            cerr(c, ins, "a variable lives in memory: x86 has no mem,mem");
+        }
+        if nmem > 0 && rsize == 0 {
+            cerr(c, ins, "a memory operand takes its width from a register");
+        }
+        if nvar == 1 && rsize > 0 {
+            for I64 o = ast.nb(t, ins); o != 0; o = ast.nnext(t, o) {
+                if ast.nop(t, o) == isa.OP_VAR && ast.ng(t, o, ast.AOP_SIZE) != rsize {
+                    cerr(c, o, "register width does not match the variable's type");
+                }
+            }
+        }
+    }
+    ast.ns(t, n, ast.ASM_CLOB, clob);
+}
+
+U0 chk_stmt(Ck* c, I64 n) {
+    ast.Ast* t = c.t;
+    I64 k = ast.nkind(t, n);
+
+    switch k {
+        case ast.ND_PRINT:
+            U8* f = ast.nname(t, n);
+            I64 a = ast.na(t, n);
+            for I64 i = 0; i < f.len; i++ {
+                if f[i] != '%' {
+                    continue;
+                }
+                i = i + 1;
+                if i >= f.len {
+                    cerr(c, n, "format string ends in '%'");
+                }
+                I64 s = f[i] as I64;
+                if s == '%' {
+                    continue;
+                }
+                if s != 'd' && s != 'x' && s != 'c' && s != 's' && s != 'f' {
+                    cerr(c, n, "print formats: %d %x %c %s %f");
+                }
+                if a == 0 {
+                    cerr(c, n, "missing argument for format specifier");
+                }
+                if s == 's' {
+                    if ast.nkind(t, a) == ast.ND_STR {
+                        ast.ns(t, a, ast.PRINT_STR, 1);
+                    } else {
+                        I64 ty = chk_expr(c, a);
+                        if ty != TP_U8PTR() {
+                            cerr_tt(c, a, "%s takes a U8*", ty, TP_U8PTR());
+                        }
+                        ast.ns(t, a, ast.PRINT_STR, 2);
+                    }
+                } else if s == 'f' {
+                    I64 ty = chk_expr(c, a);
+                    if ty != TP_F64() {
+                        cerr(c, a, "%f takes an F64");
+                    }
+                } else {
+                    I64 ty = chk_expr(c, a);
+                    if ty == TP_NONE {
+                        adapt(c, a, TP_I64());
+                    } else if tp_isint(ty) == false {
+                        cerr(c, a, "print argument must be an integer");
+                    }
+                }
+                a = ast.nnext(t, a);
+            }
+            if a != 0 {
+                cerr(c, a, "more arguments than format specifiers");
+            }
+            return;
+        case ast.ND_RETURN:
+            I64 ret = resolve_dty(c, c.fn);
+            I64 v = ast.na(t, n);
+            if ret == TP_U0() {
+                if v != 0 {
+                    cerr(c, n, "U0 function returns no value");
+                }
+                return;
+            }
+            if v == 0 {
+                cerr(c, n, "return needs a value");
+            }
+            if tp_cls(ret) == ast.CLS_STRUCT {
+                if ast.nkind(t, v) != ast.ND_VAR {
+                    cerr(c, n, "return a struct variable");
+                }
+                I64 have = chk_expr(c, v);
+                if have != ret {
+                    cerr_tt(c, n, "return type mismatch", have, ret);
+                }
+                ast.ns(t, n, ast.RET_OFF, ast.ng(t, v, ast.VAR_OFF));
+                ast.ns(t, n, ast.RET_SIZE, tp_size(c, ret));
+                return;
+            }
+            I64 have = chk_expr(c, v);
+            if have == TP_NONE {
+                adapt(c, v, ret);
+            } else if have != ret {
+                cerr_tt(c, n, "return type mismatch", have, ret);
+            }
+            return;
+        case ast.ND_DECL:
+            I64 ty = resolve_dty(c, n);
+            I64 alen = ast.ng(t, n, ast.N_DALEN);
+            if ty == TP_U0() {
+                cerr(c, n, "U0 is not a value type");
+            }
+            if ast.nc(t, n) != 0 {
+                alen = 1;
+                for I64 d = ast.nc(t, n); d != 0; d = ast.nnext(t, d) {
+                    chk_expr(c, d);
+                    if ast.nkind(t, d) != ast.ND_NUM || ast.ng(t, d, ast.N_IVAL) <= 0 || ast.nop(t, d) == ast.NUM_F64 {
+                        cerr(c, d, "an array length must be a positive constant");
+                    }
+                    alen = alen * ast.ng(t, d, ast.N_IVAL);
+                }
+                ast.ns(t, n, ast.N_DALEN, alen);
+            }
+            if alen >= 0 {
+                if tp_cls(ty) == ast.CLS_NONE {
+                    cerr(c, n, "an array needs an element type");
+                }
+                if ast.nb(t, n) == 0 {
+                    ast.ns(t, n, ast.DECL_ZERO, 1);
+                    ast.ns(t, n, ast.DECL_ESZ, tp_size(c, ty));
+                    lk_add(c, n, ast.nname(t, n), ty, alen, ast.nc(t, n));
+                    ast.ns(t, n, ast.DECL_OFF, (c.ls + (c.nls - 1)).off);
+                    ast.ns(t, n, ast.DECL_CLS, tp_cls(ty));
+                    return;
+                }
+                chk_init(c, n, ast.nb(t, n), ast.nc(t, n), ty);
+                ast.ns(t, n, ast.DECL_ESZ, tp_size(c, ty));
+                ast.ns(t, n, ast.DECL_ECLS, tp_cls(ty));
+            } else if tp_cls(ty) == ast.CLS_STRUCT {
+                Bool uni = ast.nop(t, tp_sid(ty)) == 1;
+                if uni && ast.nb(t, n) != 0 {
+                    cerr(c, n, "a union has no literal form; initialize with {}");
+                }
+                if uni && ast.na(t, n) == 0 {
+                    ast.ns(t, n, ast.DECL_ZERO, 1);
+                    ast.ns(t, n, ast.DECL_ESZ, tp_size(c, ty));
+                } else if ast.nb(t, n) != 0 {
+                    I64 f = ast.nb(t, tp_sid(ty));
+                    for I64 e = ast.nb(t, n); e != 0; e = ast.nnext(t, e) {
+                        if f == 0 {
+                            cerr(c, e, "too many fields in struct literal");
+                        }
+                        I64 want = resolve_dty(c, f);
+                        I64 et = chk_expr(c, e);
+                        if et == TP_NONE {
+                            adapt(c, e, want);
+                        } else if et != want {
+                            cerr_tt(c, e, "field type mismatch", et, want);
+                        }
+                        f = ast.nnext(t, f);
+                    }
+                    if f != 0 {
+                        cerr(c, n, "struct literal must initialize every field");
+                    }
+                } else {
+                    I64 v = ast.na(t, n);
+                    if v == 0 || ast.nkind(t, v) != ast.ND_CALL {
+                        cerr(c, n, "struct initializer: {fields} or a call");
+                    }
+                    c.sretok = 1;
+                    I64 vt = chk_expr(c, v);
+                    c.sretok = 0;
+                    if vt != ty {
+                        cerr_tt(c, n, "initializer type mismatch", vt, ty);
+                    }
+                    ast.ns(t, n, ast.DECL_CALLINIT, 1);
+                }
+            } else {
+                I64 v = ast.na(t, n);
+                if v == 0 {
+                    cerr(c, n, "initializer required");
+                }
+                I64 vt = chk_expr(c, v);
+                if vt == TP_NONE {
+                    adapt(c, v, ty);
+                } else if vt != ty {
+                    cerr_tt(c, n, "initializer type mismatch", vt, ty);
+                }
+            }
+            lk_add(c, n, ast.nname(t, n), ty, alen, ast.nc(t, n));
+            ast.ns(t, n, ast.DECL_OFF, (c.ls + (c.nls - 1)).off);
+            ast.ns(t, n, ast.DECL_CLS, tp_cls(ty));
+            return;
+        case ast.ND_ASSIGN:
+            I64 lhs = ast.na(t, n);
+            if ast.nkind(t, lhs) == ast.ND_VAR && lk_find(c, ast.nname(t, lhs)) == 0 {
+                I64 g = find_top(c, lhs, ast.ND_GLOBAL, ast.nname(t, lhs));
+                if g != 0 && ast.nop(t, g) != ast.GLOB_MUT {
+                    cerr(c, n, "a constant cannot be assigned to");
+                }
+            }
+            I64 lt = chk_expr(c, ast.na(t, n));
+            I64 wb = lhs;
+            for ast.nkind(t, wb) == ast.ND_FIELD {
+                if ast.ng(t, wb, ast.FIELD_MODE) == ast.FM_PTR {
+                    ast.ns(t, wb, ast.FIELD_W, 1);
+                }
+                wb = ast.na(t, wb);
+            }
+            if ast.nkind(t, wb) == ast.ND_INDEX && ast.nop(t, wb) == 3 {
+                if ast.nop(t, ast.ng(t, wb, ast.INDEX_G)) != 1 {
+                    cerr(c, n, "a const table cannot be assigned to");
+                }
+                if wb == lhs && tp_cls(lt) == ast.CLS_STRUCT {
+                    cerr(c, n, "a struct element is written field by field");
+                }
+            }
+            I64 rt = chk_expr(c, ast.nb(t, n));
+            if rt == TP_NONE {
+                adapt(c, ast.nb(t, n), lt);
+            } else if rt != lt {
+                cerr_tt(c, n, "assignment type mismatch", rt, lt);
+            }
+            return;
+        case ast.ND_INCDEC:
+            I64 li = lk_find(c, ast.nname(t, n));
+            if li == 0 {
+                if find_top(c, n, ast.ND_GLOBAL, ast.nname(t, n)) != 0 {
+                    cerr(c, n, "++ and -- need a local variable");
+                }
+                cerr(c, n, "undeclared variable");
+            }
+            Local* l = c.ls + (li - 1);
+            I64 ty = tpack(l.cls, l.kind, l.sid);
+            if l.alen >= 0 || tp_isint(ty) == false {
+                cerr(c, n, "++/-- needs an integer variable");
+            }
+            ast.ns(t, n, ast.INC_OFF, l.off);
+            ast.ns(t, n, ast.INC_KIND, l.kind);
+            return;
+        case ast.ND_SWITCH:
+            I64 ety = chk_expr(c, ast.na(t, n));
+            if ety == TP_NONE {
+                adapt(c, ast.na(t, n), TP_I64());
+                ety = TP_I64();
+            } else if tp_isint(ety) == false {
+                cerr(c, ast.na(t, n), "a switch takes an integer");
+            }
+            I64 lo = 0;
+            I64 hi = 0;
+            I64 nval = 0;
+            I64 ndef = 0;
+            for I64 cs = ast.nb(t, n); cs != 0; cs = ast.nc(t, cs) {
+                if (ast.nop(t, cs) & ast.CASE_DEFAULT) != 0 {
+                    ndef = ndef + 1;
+                    continue;
+                }
+                for I64 v = ast.nb(t, cs); v != 0; v = ast.nnext(t, v) {
+                    I64 a = ast.na(t, v);
+                    if chk_expr(c, a) == TP_NONE {
+                        adapt(c, a, ety);
+                    } else if get_ty(c, a) != ety {
+                        cerr_tt(c, a, "case value type mismatch", get_ty(c, a), ety);
+                    }
+                    if ast.nkind(t, a) != ast.ND_NUM {
+                        cerr(c, a, "a case takes a constant");
+                    }
+                    I64 vlo = ast.ng(t, a, ast.N_IVAL);
+                    I64 vhi = vlo;
+                    if ast.nb(t, v) != 0 {
+                        I64 b = ast.nb(t, v);
+                        if chk_expr(c, b) == TP_NONE {
+                            adapt(c, b, ety);
+                        } else if get_ty(c, b) != ety {
+                            cerr_tt(c, b, "case value type mismatch", get_ty(c, b), ety);
+                        }
+                        if ast.nkind(t, b) != ast.ND_NUM {
+                            cerr(c, b, "a case takes a constant");
+                        }
+                        vhi = ast.ng(t, b, ast.N_IVAL);
+                        if vhi < vlo {
+                            cerr(c, v, "a case range runs low to high");
+                        }
+                    }
+                    ast.ns(t, v, ast.N_IVAL, vlo);
+                    ast.ns(t, v, ast.CVAL_HI, vhi);
+                    if nval == 0 {
+                        lo = vlo;
+                        hi = vhi;
+                    }
+                    if vlo < lo {
+                        lo = vlo;
+                    }
+                    if vhi > hi {
+                        hi = vhi;
+                    }
+                    nval = nval + 1;
+                }
+            }
+            if nval == 0 {
+                cerr(c, n, "a switch needs at least one case");
+            }
+            I64 span = hi - lo + 1;
+            if span > 4096 || span <= 0 {
+                cerr(c, n, "this switch is too sparse for a table; write if");
+            }
+            U8* seen = heap.alloc(span);
+            for I64 i = 0; i < span; i++ {
+                seen[i] = 0;
+            }
+            for I64 cs = ast.nb(t, n); cs != 0; cs = ast.nc(t, cs) {
+                for I64 v = ast.nb(t, cs); v != 0; v = ast.nnext(t, v) {
+                    for I64 x = ast.ng(t, v, ast.N_IVAL); x <= ast.ng(t, v, ast.CVAL_HI); x++ {
+                        if seen[x - lo] != 0 {
+                            cerr(c, v, "duplicate case value");
+                        }
+                        seen[x - lo] = 1;
+                    }
+                }
+            }
+            ast.ns(t, n, ast.SW_LO, lo);
+            ast.ns(t, n, ast.SW_SPAN, span);
+            I64 last = 0;
+            for I64 cs = ast.nb(t, n); cs != 0; cs = ast.nc(t, cs) {
+                scope_push(c);
+                for I64 st = ast.na(t, cs); st != 0; st = ast.nnext(t, st) {
+                    chk_stmt(c, st);
+                }
+                scope_pop(c);
+                last = cs;
+            }
+            if (ast.nop(t, last) & 2) == 2 {
+                cerr(c, last, "the last case cannot fall through");
+            }
+            return;
+        case ast.ND_FALLT:
+            return;
+        case ast.ND_IF:
+            if chk_expr(c, ast.na(t, n)) != TP_BOOL() {
+                cerr(c, ast.na(t, n), "condition must be Bool");
+            }
+            scope_push(c);
+            chk_stmt(c, ast.nb(t, n));
+            scope_pop(c);
+            if ast.nc(t, n) != 0 {
+                scope_push(c);
+                chk_stmt(c, ast.nc(t, n));
+                scope_pop(c);
+            }
+            return;
+        case ast.ND_FOR:
+            scope_push(c);
+            if ast.na(t, n) != 0 {
+                chk_stmt(c, ast.na(t, n));
+            }
+            if chk_expr(c, ast.nb(t, n)) != TP_BOOL() {
+                cerr(c, ast.nb(t, n), "condition must be Bool");
+            }
+            if ast.nc(t, n) != 0 {
+                chk_stmt(c, ast.nc(t, n));
+            }
+            c.inloop = c.inloop + 1;
+            scope_push(c);
+            chk_stmt(c, ast.nd(t, n));
+            scope_pop(c);
+            c.inloop = c.inloop - 1;
+            scope_pop(c);
+            return;
+        case ast.ND_BLOCK:
+            if ast.nop(t, n) == 1 {
+                c.unsafe = c.unsafe + 1;
+            }
+            scope_push(c);
+            for I64 s = ast.na(t, n); s != 0; s = ast.nnext(t, s) {
+                chk_stmt(c, s);
+            }
+            scope_pop(c);
+            if ast.nop(t, n) == 1 {
+                c.unsafe = c.unsafe - 1;
+            }
+            return;
+        case ast.ND_EXPR:
+            chk_expr(c, ast.na(t, n));
+            return;
+        case ast.ND_DEFER:
+            chk_stmt(c, ast.na(t, n));
+            return;
+        case ast.ND_ASM:
+            chk_asm(c, n);
+            return;
+        case ast.ND_BREAK, ast.ND_CONT:
+            if c.inloop == 0 {
+                cerr(c, n, "break/continue outside a loop");
+            }
+            return;
+    }
+    cerr(c, n, "internal: bad statement node");
+}
+
+Bool ret_is_big(Ck* c, I64 ty) {
+    if tp_cls(ty) == ast.CLS_STRUCT {
+        return true;
+    }
+    return tp_size(c, ty) > 8;
+}
+
+U0 chk_sig(Ck* c, I64 f) {
+    ast.Ast* t = c.t;
+    c.fn = f;
+    I64 ret = resolve_dty(c, f);
+    if ret_is_big(c, ret) {
+        ast.ns(t, f, ast.FN_BIG, 1);
+    }
+    for I64 p = ast.nb(t, f); p != 0; p = ast.nnext(t, p) {
+        I64 pty = resolve_dty(c, p);
+        if ast.nop(t, p) == 1 {
+            if ast.nnext(t, p) != 0 {
+                cerr(c, p, "only the last parameter may be variadic");
+            }
+            if tp_cls(pty) != ast.CLS_SCALAR || tp_kind(pty) == ast.SK_U0 {
+                cerr(c, p, "a variadic tail must be a scalar type");
+            }
+            ast.ns(t, f, ast.FN_VARIADIC, 1);
+            ast.ns(t, f, ast.FN_VKIND, tp_kind(pty));
+            ast.ns(t, p, ast.N_DCLS, ast.CLS_SCALARP);
+        }
+        if pty == TP_U0() {
+            cerr(c, p, "U0 parameter");
+        }
+        if tp_cls(pty) == ast.CLS_STRUCT {
+            cerr(c, p, "struct parameters are not in the subset");
+        }
+    }
+    I64 h = hash.start();
+    h = sig_hash_ty(c, h, ret);
+    for I64 p = ast.nb(t, f); p != 0; p = ast.nnext(t, p) {
+        if ast.nop(t, p) == 1 {
+            h = hash.bytes(h, "...");
+        } else {
+            h = sig_hash_ty(c, h, resolve_dty(c, p));
+        }
+    }
+    ast.ns(t, f, ast.FN_SIGHASH, h);
+}
+
+U0 chk_fn(Ck* c, I64 f) {
+    ast.Ast* t = c.t;
+    c.fn = f;
+    c.nls = 0;
+    c.nmk = 0;
+    c.cur = 0;
+    c.inloop = 0;
+    c.unsafe = 0;
+    c.sretok = 0;
+    Bool big = ast.ng(t, f, ast.FN_BIG) == 1;
+    scope_push(c);
+    if big {
+        c.cur = c.cur + 8;
+        ast.ns(t, f, ast.FN_SRET, c.cur);
+    }
+    for I64 p = ast.nb(t, f); p != 0; p = ast.nnext(t, p) {
+        I64 pty = resolve_dty(c, p);
+        lk_add(c, p, ast.nname(t, p), pty, -1, 0);
+        ast.ns(t, p, ast.PARAM_OFF, (c.ls + (c.nls - 1)).off);
+    }
+    chk_stmt(c, ast.na(t, f));
+    scope_pop(c);
+    ast.ns(t, f, ast.FN_FRAME, (c.cur + 15) / 16 * 16);
+}
+
+I64 narrow_to(I64 v, I64 kind) {
+    I64 sz = ast.sk_size(kind);
+    if sz >= 8 {
+        return v;
+    }
+    I64 bits = sz * 8;
+    I64 m = (1 << bits) - 1;
+    I64 u = v & m;
+    if ast.sk_signed(kind) && (u >> (bits - 1)) != 0 {
+        return u - (m + 1);
+    }
+    return u;
+}
+
+I64 const_binop(Ck* c, I64 n, I64 op, I64 a, I64 b) {
+    switch op {
+        case ast.OP_ADD: return a + b;
+        case ast.OP_SUB: return a - b;
+        case ast.OP_MUL: return a * b;
+        case ast.OP_DIV:
+            if b == 0 {
+                cerr(c, n, "division by zero");
+            }
+            return a / b;
+        case ast.OP_MOD:
+            if b == 0 {
+                cerr(c, n, "division by zero");
+            }
+            return a % b;
+        case ast.OP_SHL: return a << b;
+        case ast.OP_SHR: return a >> b;
+        case ast.OP_AND: return a & b;
+        case ast.OP_XOR: return a ^ b;
+        case ast.OP_OR:  return a | b;
+        case ast.OP_LT:
+            if a < b {
+                return 1;
+            }
+            return 0;
+        case ast.OP_LE:
+            if a <= b {
+                return 1;
+            }
+            return 0;
+        case ast.OP_GT:
+            if a > b {
+                return 1;
+            }
+            return 0;
+        case ast.OP_GE:
+            if a >= b {
+                return 1;
+            }
+            return 0;
+        case ast.OP_EQ:
+            if a == b {
+                return 1;
+            }
+            return 0;
+    }
+    if a != b {
+        return 1;
+    }
+    return 0;
+}
+
+I64 hash_type(Ck* c, I64 h, I64 n) {
+    ast.Ast* t = c.t;
+    h = hash.bytes(h, fmt.dec(ast.ng(t, n, ast.N_DCLS)));
+    h = hash.bytes(h, fmt.dec(ast.ng(t, n, ast.N_DKIND)));
+    h = hash.bytes(h, fmt.dec(ast.ng(t, n, ast.N_DALEN)));
+    if ast.ng(t, n, ast.N_DCLS) >= 3 {
+        h = hash.bytes(h, ast.blob(t, ast.ng(t, n, ast.N_TNOFF), ast.ng(t, n, ast.N_TNLEN)));
+    }
+    if ast.ng(t, n, ast.N_DCLS) == ast.CLS_FN {
+        h = hash.bytes(h, fmt.dec(ast.ng(t, ast.ng(t, n, ast.N_DSID), ast.N_IVAL)));
+    }
+    return h;
+}
+
+I64 iface_hash(Ck* c, I64 pkg) {
+    ast.Ast* t = c.t;
+    I64 h = hash.start();
+    for I64 d = t.top; d != 0; d = ast.nnext(t, d) {
+        if ast.node_pkg(t, d) != pkg {
+            continue;
+        }
+        I64 k = ast.nkind(t, d);
+        if k != ast.ND_FN && k != ast.ND_SDEF {
+            continue;
+        }
+        U8* nm = ast.nname(t, d);
+        if nm[0] == '_' {
+            continue;
+        }
+        h = hash.bytes(h, nm);
+        if k == ast.ND_FN {
+            h = hash_type(c, h, d);
+            for I64 p = ast.nb(t, d); p != 0; p = ast.nnext(t, p) {
+                h = hash.bytes(h, ast.nname(t, p));
+                h = hash_type(c, h, p);
+            }
+        } else {
+            h = hash.bytes(h, fmt.dec(ast.nop(t, d)));
+            h = hash.bytes(h, fmt.dec(ast.ng(t, d, ast.SDEF_UNSAFE)));
+            for I64 f = ast.nb(t, d); f != 0; f = ast.nnext(t, f) {
+                h = hash.bytes(h, ast.nname(t, f));
+                h = hash_type(c, h, f);
+            }
+        }
+    }
+    return h;
+}
+
+U0 check_all(Ck* c) {
+    ast.Ast* t = c.t;
+    for I64 d = t.top; d != 0; d = ast.nnext(t, d) {
+        if ast.nkind(t, d) == ast.ND_IMPORT {
+            U8* p = ast.nname(t, d);
+            I64 me = ast.node_pkg(t, d);
+            I64 q = ast.pkg_find(t, p);
+            if q < 0 {
+                cerr(c, d, "no such package");
+            }
+            if q == me {
+                cerr(c, d, "a package cannot import itself");
+            }
+            for I64 i = 0; i < t.pnimp[me]; i++ {
+                I64 o = ast.pkg_imp(t, me, i);
+                if o != q && str.eq(ast.pkg_name(t, o), ast.pkg_name(t, q)) {
+                    cerr(c, d, "import name collision (rename a directory)");
+                }
+            }
+            ast.pkg_addimp(t, me, q);
+        }
+    }
+    layout_structs(c);
+    if c.libmode == 0 {
+        I64 m = find_top_in(c, 0, ast.ND_FN, "main");
+        if m == 0 {
+            diag.die("no main function in the root package");
+        }
+    }
+    for I64 d = t.top; d != 0; d = ast.nnext(t, d) {
+        if ast.nkind(t, d) == ast.ND_FN {
+            for I64 e = ast.nnext(t, d); e != 0; e = ast.nnext(t, e) {
+                if ast.nkind(t, e) == ast.ND_FN && ast.node_pkg(t, e) == ast.node_pkg(t, d) &&
+                   str.eq(ast.nname(t, e), ast.nname(t, d)) {
+                    cerr(c, e, "function redefined");
+                }
+            }
+        }
+    }
+    for I64 d = t.top; d != 0; d = ast.nnext(t, d) {
+        if ast.nkind(t, d) == ast.ND_FN {
+            chk_sig(c, d);
+        }
+    }
+    for I64 d = t.top; d != 0; d = ast.nnext(t, d) {
+        if ast.nkind(t, d) == ast.ND_GLOBAL {
+            if ast.nc(t, d) != 0 {
+                chk_table(c, d);
+            } else if ast.nop(t, d) == 1 {
+                chk_gvar(c, d);
+            } else {
+                I64 probe = ast.node_new(t, ast.ND_NUM, ast.nline(t, d), ast.ng(t, d, ast.N_COL));
+                fold_global(c, d, probe);
+            }
+        }
+    }
+    if c.only != -2 {
+        chk_bodies(c);
+    }
+}
+
+U0 chk_bodies(Ck* c) {
+    ast.Ast* t = c.t;
+    for I64 d = t.top; d != 0; d = ast.nnext(t, d) {
+        if ast.nkind(t, d) == ast.ND_FN {
+            if c.only < 0 || ast.node_pkg(t, d) == c.only {
+                chk_fn(c, d);
+            }
+        }
+    }
+}

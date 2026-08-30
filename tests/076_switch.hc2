@@ -1,0 +1,102 @@
+// switch: always a jump table. Ranges, multi-value cases, explicit
+// fallthrough, and a break that still belongs to the enclosing loop.
+const I64 ND_ADD = 4;
+const I64 ND_SUB = 5;
+
+U8* classify(I64 c) {
+    switch c {
+        case '0' ... '9':
+            return "digit";
+        case 'a' ... 'z', 'A' ... 'Z':
+            return "letter";
+        case ' ', '\t', '\n':
+            return "space";
+        default:
+            return "other";
+    }
+    return "unreachable";
+}
+
+I64 chain(I64 x) {
+    I64 n = 0;
+    switch x {
+        case 1:
+            n = n + 1;
+            fallthrough;
+        case 2:
+            n = n + 10;
+            fallthrough;
+        case 3:
+            n = n + 100;
+        case 4:
+            n = n + 1000;
+    }
+    return n;
+}
+
+I64 op_of(I64 k) {
+    switch k {
+        case ND_ADD, ND_SUB:
+            return 1;
+        case 9:
+            return 2;
+    }
+    return 0;                          // no default: a miss falls out
+}
+
+I64 scoped(I64 x) {
+    switch x {
+        case 1:
+            I64 v = 11;                    // each case body is its own scope
+            return v;
+        case 2:
+            I64 v = 22;
+            return v;
+    }
+    return 0;
+}
+
+I64 loop_break(I64 n) {
+    I64 sum = 0;
+    for I64 i = 0; i < 10; i++ {
+        switch i {
+            case 3:
+                continue;                    // the loop's continue
+            case 7:
+                break;                       // the loop's break, not the switch
+            case 0 ... 2, 4 ... 6:
+                sum = sum + i;
+        }
+        sum = sum + 100;
+    }
+    return sum;
+}
+
+U0 say(U8* s) {
+    "%s", s;
+}
+
+U0 deferred(I64 x) {
+    switch x {
+        case 1:
+            defer say("d1 ");            // runs when the case body ends —
+            say("b1 ");                  // that is, before falling through
+            fallthrough;
+        case 2:
+            defer say("d2 ");
+            say("b2 ");
+    }
+    say("| ");
+}
+
+I32 main() {
+    "%s %s %s %s\n", classify('7'), classify('q'), classify(' '), classify('!');
+    "%d %d %d %d %d\n", chain(1), chain(2), chain(3), chain(4), chain(9);
+    "%d %d %d\n", op_of(ND_ADD), op_of(9), op_of(99);
+    "%d %d %d\n", scoped(1), scoped(2), scoped(3);
+    "%d\n", loop_break(0);
+    deferred(1);
+    deferred(2);
+    "\n";
+    return 0;
+}

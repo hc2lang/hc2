@@ -1,0 +1,6 @@
+I32 main() {
+    asm {
+        MOV RBP, 0
+    }
+    return 0;
+}

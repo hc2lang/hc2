@@ -1,0 +1,17 @@
+import "geom";
+import "heap";
+
+I64 twice(geom.Pt* p) {
+    return geom.sum(p) * 2;
+}
+
+I32 main() {
+    geom.Pt v = geom.make(3, 4);
+    "v %d %d\n", v.x, v.y;
+    geom.Pt* p = heap.alloc(sizeof(geom.Pt)) as geom.Pt*;
+    defer heap.free(p as U8*);
+    p.x = 10;
+    p.y = 20;
+    "sum %d twice %d\n", geom.sum(p), twice(p);
+    return 0;
+}

@@ -1,0 +1,7 @@
+import "heap";
+
+I32 main() {
+    U8* p = heap.alloc(64);
+    heap.free(p + 1);
+    return 0;
+}

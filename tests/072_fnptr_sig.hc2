@@ -1,0 +1,6 @@
+I32 add(I32 a, I32 b) { return a + b; }
+
+I32 main() {
+    I32(I32)* f = &add;
+    return 0;
+}

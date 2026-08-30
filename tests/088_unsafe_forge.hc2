@@ -1,0 +1,42 @@
+// a capability minted by hand: what sys.from_raw does, written as user code
+import "sys";
+
+struct W {
+    I64 a;
+    I64 h;
+    I64 ol;
+    I64 g;
+}
+
+unsafe union C {
+    W w;
+    U8* p;
+}
+
+U8* mint(I64 addr, I64 len) {
+    unsafe {
+        I64 h = addr - 16;
+        I64 one = 1;
+        asm {
+            MOV RAX, h
+            MOV RCX, len
+            MOV [RAX], RCX
+            MOV RDX, one
+            MOV [RAX + 8], RDX
+        }
+        C c = {};
+        c.w.a = addr;
+        c.w.h = h | 1;
+        c.w.ol = len << 32;
+        c.w.g = 1;
+        return c.p;
+    }
+}
+
+U0 main() {
+    I64 m = sys.mmap(4096);
+    U8* b = mint(m + 32, 16);
+    b[0] = 'A';
+    b[15] = 'Z';
+    "%c%c len=%d lo=%d gen=%d\n", b[0] as I64, b[15] as I64, b.len, b.lo, b.gen;
+}

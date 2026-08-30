@@ -1,0 +1,8 @@
+I32 main() {
+    I64 x = 1;
+    switch x {
+        case 1 ... 5: "a\n";
+        case 4 ... 9: "b\n";
+    }
+    return 0;
+}

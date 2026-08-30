@@ -1,0 +1,7 @@
+import "heap";
+
+I32 main() {
+    U8* s = "world";
+    heap.free(s);
+    return 0;
+}

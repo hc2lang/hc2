@@ -1,0 +1,14 @@
+U0 note(I32 n) {
+    "note %d\n", n;
+}
+
+I32 main() {
+    defer note(1);
+    defer note(2);
+    U8* s = "hello";
+    "say: %s\n", s;
+    "300 as U8 = %d\n", 300 as U8;
+    I64 v = -5;
+    "v as U32 = %d\n", v as U32;
+    return 0;
+}

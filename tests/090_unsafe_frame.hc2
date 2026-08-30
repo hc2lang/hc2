@@ -1,0 +1,10 @@
+// even unsafe does not hand over the frame registers
+U0 main() {
+    I64 x = 0;
+    unsafe {
+        asm {
+            MOV RAX, x
+            MOV [RBP - 8], RAX
+        }
+    }
+}

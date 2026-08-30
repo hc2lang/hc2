@@ -1,0 +1,742 @@
+import "hc2/asm";
+import "hc2/asm/elf";
+import "hc2/asm/macho";
+import "hc2/ast";
+import "hc2/check";
+import "hc2/isa";
+import "hc2/gen";
+import "hc2/gen/x86";
+import "hc2/gen/a64";
+import "hc2/opt";
+import "heap";
+import "hc2/lex";
+import "hc2/parse";
+import "fmt";
+import "hash";
+import "hc2/diag";
+import "str";
+import "sys";
+import "rt";
+
+Bool is_dir(U8* path) {
+    I64 fd = sys.open(path);
+    if fd < 0 {
+        return false;
+    }
+    U8* probe = heap.alloc(1024);
+    I64 got = sys.getdents(fd, probe);
+    sys.close(fd);
+    return got >= 0;
+}
+
+U8* readfile(U8* path) {
+    I64 fd = sys.open(path);
+    if fd < 0 {
+        diag.die("cannot open input");
+    }
+    I64 cap = sys.fsize(fd) + 1;
+    U8* buf = heap.alloc(cap);
+    I64 total = 0;
+    for true {
+        if total >= cap {
+            diag.die("input file too large");
+        }
+        I64 n = sys.read(fd, buf[total : cap]);
+        if n < 0 {
+            diag.die("read failed");
+        }
+        if n == 0 {
+            break;
+        }
+        total = total + n;
+    }
+    sys.close(fd);
+    return buf[0 : total];
+}
+
+U8* path_join(U8* a, U8* b) {
+    I64 n = a.len + 1 + b.len;
+    U8* p = heap.alloc(n + 1);
+    I64 k = 0;
+    for I64 i = 0; i < a.len; i++ {
+        p[k] = a[i];
+        k = k + 1;
+    }
+    p[k] = '/';
+    k = k + 1;
+    for I64 i = 0; i < b.len; i++ {
+        p[k] = b[i];
+        k = k + 1;
+    }
+    return p[0 : n];
+}
+
+Bool known_os(U8* s) {
+    return str.eq(s, "linux") || str.eq(s, "macos");
+}
+
+Bool known_arch(U8* s) {
+    return str.eq(s, "amd64") || str.eq(s, "arm64");
+}
+
+I64 _lastu(U8* s, I64 end) {
+    for I64 i = end - 1; i >= 0; i = i - 1 {
+        if s[i] == '_' {
+            return i;
+        }
+    }
+    return -1;
+}
+
+Bool for_this_target(U8* nm) {
+    I64 stem = nm.len - 4;
+    I64 cut = _lastu(nm, stem);
+    if cut < 0 {
+        return true;
+    }
+    U8* suf = nm[cut + 1 : stem];
+    if known_arch(suf) {
+        if str.eq(suf, target_arch()) == false {
+            return false;
+        }
+        I64 cut2 = _lastu(nm, cut);
+        if cut2 >= 0 && known_os(nm[cut2 + 1 : cut]) {
+            return str.eq(nm[cut2 + 1 : cut], target_os());
+        }
+        return true;
+    }
+    if known_os(suf) {
+        return str.eq(suf, target_os());
+    }
+    return true;
+}
+
+Bool ends_hc2(U8* s) {
+    if s.len < 5 {
+        return false;
+    }
+    I64 b = s.len - 4;
+    return s[b] == '.' && s[b + 1] == 'h' && s[b + 2] == 'c' && s[b + 3] == '2';
+}
+
+I64 dent_reclen(U8* b, I64 o) {
+    return (b[o + sys.DENT_RECLEN_AT] as I64) | ((b[o + sys.DENT_RECLEN_AT + 1] as I64) << 8);
+}
+
+I64 dent_namelen(U8* b, I64 o, I64 lim) {
+    I64 s = o + sys.dent_nameoff();
+    I64 i = s;
+    for i < lim {
+        if b[i] == 0 {
+            return i - s;
+        }
+        i = i + 1;
+    }
+    return i - s;
+}
+
+Bool parse_pkg_dir(ast.Ast* t, U8* dir, I64 pkg) {
+    I64 fd = sys.open(str.cstr(dir));
+    if fd < 0 {
+        return false;
+    }
+    U8* buf = heap.alloc(1 << 16);
+    U8* names = heap.alloc(1 << 16);
+    I64* noff = heap.alloc(256 * sizeof(I64)) as I64*;
+    I64* nlen = heap.alloc(256 * sizeof(I64)) as I64*;
+    I64 nn = 0;
+    I64 used = 0;
+    for true {
+        I64 got = sys.getdents(fd, buf);
+        if got <= 0 {
+            break;
+        }
+        I64 o = 0;
+        for o < got {
+            I64 rl = dent_reclen(buf, o);
+            if rl <= 0 {
+                break;
+            }
+            I64 ln = dent_namelen(buf, o, got);
+            I64 at = o + sys.dent_nameoff();
+            U8* nm = buf[at : at + ln];
+            if ends_hc2(nm) && for_this_target(nm) {
+                if nn >= 256 {
+                    diag.die("too many files in one package");
+                }
+                for I64 i = 0; i < ln; i++ {
+                    names[used + i] = nm[i];
+                }
+                noff[nn] = used;
+                nlen[nn] = ln;
+                used = used + ln;
+                nn = nn + 1;
+            }
+            o = o + rl;
+        }
+    }
+    sys.close(fd);
+    if nn == 0 {
+        return false;
+    }
+    for I64 i = 1; i < nn; i++ {
+        I64 o = noff[i];
+        I64 l = nlen[i];
+        I64 j = i - 1;
+        for j >= 0 {
+            if str.less(names[noff[j] : noff[j] + nlen[j]], names[o : o + l]) {
+                break;
+            }
+            noff[j + 1] = noff[j];
+            nlen[j + 1] = nlen[j];
+            j = j - 1;
+        }
+        noff[j + 1] = o;
+        nlen[j + 1] = l;
+    }
+    for I64 i = 0; i < nn; i++ {
+        U8* path = path_join(dir, names[noff[i] : noff[i] + nlen[i]]);
+        ast.ast_addfile(t, path, pkg);
+        parse.parse_program(lex.lex_new(t, path, readfile(path)));
+    }
+    return true;
+}
+
+Bool has_marker(U8* dir) {
+    I64 fd = sys.open(str.cstr(path_join(dir, "hc2.root")));
+    if fd < 0 {
+        return false;
+    }
+    sys.close(fd);
+    return true;
+}
+
+U8* find_root(U8* from) {
+    U8* dir = from;
+    for I64 i = 0; i < 64; i++ {
+        if has_marker(dir) {
+            return dir;
+        }
+        dir = path_join(dir, "..");
+    }
+    return "";
+}
+
+U8* proj_root(U8* from) {
+    U8* r = find_root(from);
+    if r.len == 0 {
+        return from;
+    }
+    return r;
+}
+
+U8* self_dir() {
+    U8* buf = heap.alloc(4096);
+    I64 n = sys.self_path(buf);
+    if n <= 0 {
+        return dirname_of(rt.arg(0));
+    }
+    I64 cut = 0;
+    for I64 i = 0; i < n; i++ {
+        if buf[i] == '/' {
+            cut = i;
+        }
+    }
+    if cut == 0 {
+        return "/";
+    }
+    return buf[0 : cut];
+}
+
+U8* lang_root() {
+    U8* d = self_dir();
+    if d.len == 0 {
+        return "";
+    }
+    return find_root(d);
+}
+
+Bool load_at(ast.Ast* t, U8* base, U8* dir, I64 pkg) {
+    if base.len == 0 {
+        return false;
+    }
+    return parse_pkg_dir(t, path_join(base, dir), pkg);
+}
+
+U0 load_pkg(ast.Ast* t, U8* root, I64 pkg) {
+    t.pstate[pkg] = 1;
+    U8* dir = ast.pkg_path(t, pkg);
+    if dir.len == 0 {
+        if parse_pkg_dir(t, root, pkg) == false {
+            "hc2c1: no .hc2 files in %s\n", root;
+            sys.exit(1);
+        }
+    } else {
+        Bool got = load_at(t, proj_root(root), dir, pkg);
+        if got == false {
+            got = load_at(t, lang_root(), dir, pkg);
+        }
+        if got == false {
+            "hc2c1: cannot find package %s\n", dir;
+            sys.exit(1);
+        }
+    }
+    load_imports(t, root, pkg);
+    t.pstate[pkg] = 2;
+}
+
+U0 load_imports(ast.Ast* t, U8* root, I64 pkg) {
+    for I64 d = t.top; d != 0; d = ast.nnext(t, d) {
+        if ast.nkind(t, d) == ast.ND_IMPORT && ast.node_pkg(t, d) == pkg {
+            U8* ip = ast.nname(t, d);
+            I64 q = ast.pkg_find(t, ip);
+            if q < 0 {
+                q = ast.pkg_new(t, ip);
+                load_pkg(t, root, q);
+            } else if t.pstate[q] == 1 {
+                "hc2c1: import cycle through %s\n", ip;
+                sys.exit(1);
+            }
+        }
+    }
+}
+
+U0 ensure_rt(ast.Ast* t, U8* root) {
+    if ast.pkg_find(t, "rt") < 0 {
+        I64 q = ast.pkg_new(t, "rt");
+        load_pkg(t, root, q);
+    }
+}
+
+U0 write_out(U8* path, U8* bytes) {
+    sys.unlink(path);
+    I64 fd = sys.create(path);
+    if fd < 0 {
+        diag.die("cannot create output");
+    }
+    sys.write(fd, bytes);
+    sys.close(fd);
+}
+
+U8* dirname_of(U8* p) {
+    I64 cut = -1;
+    for I64 i = 0; i < p.len; i++ {
+        if p[i] == '/' {
+            cut = i;
+        }
+    }
+    if cut < 0 {
+        return ".";
+    }
+    if cut == 0 {
+        return "/";
+    }
+    return p[0 : cut];
+}
+
+U8* basename(U8* p) {
+    I64 cut = 0;
+    for I64 i = 0; i < p.len; i++ {
+        if p[i] == '/' {
+            cut = i + 1;
+        }
+    }
+    if cut >= p.len {
+        return "a.out";
+    }
+    U8* b = p[cut : p.len];
+    if str.eq(b, ".") {
+        return "a.out";
+    }
+    return b;
+}
+
+I64 self_key() {
+    U8* buf = heap.alloc(4096);
+    I64 n = sys.self_path(buf);
+    if n <= 0 {
+        return hash.bytes(hash.start(), readfile(rt.arg(0)));
+    }
+    return hash.bytes(hash.start(), readfile(buf[0 : n]));
+}
+
+I64 pkg_key(check.Ck* c, ast.Ast* t, I64 pkg, I64 self) {
+    I64 h = self;
+    for I64 f = 0; f < t.nfiles; f++ {
+        if t.fpkg[f] == pkg {
+            h = hash.bytes(h, ast.file_path(t, f));
+            h = hash.bytes(h, readfile(str.cstr(ast.file_path(t, f))));
+        }
+    }
+    for I64 i = 0; i < t.pnimp[pkg]; i++ {
+        h = hash.bytes(h, fmt.dec(check.iface_hash(c, ast.pkg_imp(t, pkg, i))));
+    }
+    return h;
+}
+
+U8* cache_path(U8* dir, U8* name, I64 key) {
+    U8* base = path_join(dir, name);
+    U8* k = fmt.dec(key);
+    I64 n = base.len + 1 + k.len + 2;
+    U8* p = heap.alloc(n + 1);
+    I64 at = 0;
+    for I64 i = 0; i < base.len; i++ {
+        p[at] = base[i];
+        at = at + 1;
+    }
+    p[at] = '.'; at = at + 1;
+    for I64 i = 0; i < k.len; i++ {
+        p[at] = k[i];
+        at = at + 1;
+    }
+    p[at] = '.'; at = at + 1;
+    p[at] = 'o'; at = at + 1;
+    return p[0 : n];
+}
+
+I32 build(U8* cachedir, U8* outpath, U8* root) {
+    ast.Ast* t = ast.ast_new(120000, 8 << 20);
+    ast.pkg_new(t, "");
+    load_pkg(t, root, 0);
+    ensure_rt(t, root);
+    I64 arm = isa.X86;
+    if str.eq(target_arch(), "arm64") {
+        arm = isa.A64;
+    }
+    check.Ck* c = check.ck_new(t);
+    c.isa = arm;
+    c.only = check.ONLY_LAYOUTS;
+    check.check_all(c);
+    gen.Em* e = gen.em_new(c);
+    if _noopt == 0 {
+        e.o.on = 1;
+    }
+    sys.mkdir(cachedir);
+
+    I64 self = self_key();
+    if _noopt != 0 {
+        self = hash.bytes(self, "noopt");
+    }
+    self = hash.bytes(self, target_os());
+    self = hash.bytes(self, target_arch());
+    asm.As* link = asm.as_new();
+    link.isa = arm;
+    asm.As* one = asm.as_new();
+    one.isa = arm;
+    I64 built = 0;
+    I64 reused = 0;
+    for I64 p = t.npkg - 1; p >= 0; p = p - 1 {
+        U8* nm = ast.pkg_name(t, p);
+        U8* path = cache_path(cachedir, nm, pkg_key(c, t, p, self));
+        I64 fd = sys.open(path);
+        if fd >= 0 {
+            sys.close(fd);
+            asm.obj_append(link, readfile(path));
+            reused = reused + 1;
+        } else {
+            c.only = p;
+            check.chk_bodies(c);
+            if e.o.on != 0 {
+                opt.op_run(e.o);
+            }
+            gen.em_reset(e);
+            run_gen(e);
+            asm.as_reset(one);
+            asm.assemble_file(one, e.buf[0 : e.len]);
+            U8* obj = asm.obj_write(one);
+            write_out(path, obj);
+            asm.obj_append(link, obj);
+            built = built + 1;
+        }
+    }
+    if str.eq(target_os(), "macos") {
+        write_out(outpath, macho.image(link));
+    } else {
+        write_out(outpath, elf.image(link));
+    }
+    sys.chmod(outpath, 493);
+    "built %d packages, reused %d\n", built, reused;
+    return 0;
+}
+
+U0 usage() {
+    "  hc2 build [-o out] [-target p] [dir]\n";
+    "                             compile a package tree, rebuilding what changed\n";
+    "  hc2 clean [dir]            drop that project's build cache\n\n";
+    "An import is a directory path from the project root: the nearest\n";
+    "directory at or above the built one holding an hc2.root file. What is\n";
+    "not there is taken from the language root, found the same way beside\n";
+    "this executable.\n\n";
+    "A target is an os/arch pair (linux/arm64); giving one half takes the\n";
+    "other from this machine, and the default is this machine outright.\n";
+    "It selects files: rt.hc2 is built for every target, a _linux_arm64\n";
+    "suffix only for that pair, a bare _arm64 for both arm64 pairs.\n\n";
+    "Plumbing, for looking inside:\n";
+    "  hc2 build -noopt ...                no optimizer, to measure what it buys\n";
+    "  hc2 [-c] [-target p] -S out.s <dir | file...>\n";
+    "                                      stop at assembly\n";
+    "  hc2 --link [-target p] out a.s ...  assemble and link given assembly\n";
+}
+
+I64 _target_arg = -1;
+
+I64 _noopt = 0;
+
+U8* _tstr() {
+    if _target_arg < 0 {
+        return "";
+    }
+    return rt.arg(_target_arg);
+}
+
+I64 _slash(U8* t) {
+    for I64 i = 0; i < t.len; i++ {
+        if t[i] == '/' {
+            return i;
+        }
+    }
+    return -1;
+}
+
+U8* target_os() {
+    U8* t = _tstr();
+    if t.len == 0 {
+        return sys.OS;
+    }
+    I64 k = _slash(t);
+    if k >= 0 {
+        return t[0 : k];
+    }
+    if known_os(t) {
+        return t;
+    }
+    return sys.OS;
+}
+
+U8* target_arch() {
+    U8* t = _tstr();
+    if t.len == 0 {
+        return sys.ARCH;
+    }
+    I64 k = _slash(t);
+    if k >= 0 {
+        return t[k + 1 : t.len];
+    }
+    if known_arch(t) {
+        return t;
+    }
+    return sys.ARCH;
+}
+
+U0 need_valid_target() {
+    U8* t = _tstr();
+    if t.len == 0 {
+        return;
+    }
+    I64 k = _slash(t);
+    if k < 0 && known_os(t) == false && known_arch(t) == false {
+        "hc2c1: unknown target %s\n", t;
+        sys.exit(1);
+    }
+    U8* o = target_os();
+    U8* a = target_arch();
+    if known_os(o) == false || known_arch(a) == false {
+        "hc2c1: unknown target %s\n", t;
+        sys.exit(1);
+    }
+    if str.eq(o, "macos") && str.eq(a, "amd64") {
+        "hc2c1: unsupported target %s/%s\n", o, a;
+        sys.exit(1);
+    }
+}
+
+U0 run_gen(gen.Em* e) {
+    if str.eq(target_arch(), "amd64") {
+        x86.gen_unit(e);
+        return;
+    }
+    if str.eq(target_os(), "macos") {
+        e.macho = 1;
+    }
+    a64.gen_unit(e);
+}
+
+I32 cmd_build(I64 base) {
+    U8* out = "";
+    U8* dir = ".";
+    I64 i = base;
+    for i < rt.argc() {
+        U8* a = rt.arg(i);
+        if str.eq(a, "-o") {
+            if i + 1 >= rt.argc() {
+                diag.die("-o needs a path");
+            }
+            out = rt.arg(i + 1);
+            i = i + 2;
+        } else if str.eq(a, "-target") {
+            if i + 1 >= rt.argc() {
+                diag.die("-target needs a name");
+            }
+            _target_arg = i + 1;
+            need_valid_target();
+            i = i + 2;
+        } else if str.eq(a, "-noopt") {
+            _noopt = 1;
+            i = i + 1;
+        } else {
+            dir = a;
+            i = i + 1;
+        }
+    }
+    if out.len == 0 {
+        out = basename(dir);
+    }
+    return build(path_join(proj_root(dir), ".hc2cache"), out, dir);
+}
+
+I32 cmd_clean(I64 base) {
+    U8* dir = ".";
+    if rt.argc() > base {
+        dir = rt.arg(base);
+    }
+    U8* cache = path_join(proj_root(dir), ".hc2cache");
+    I64 fd = sys.open(str.cstr(cache));
+    if fd < 0 {
+        "nothing to clean\n";
+        return 0;
+    }
+    U8* buf = heap.alloc(1 << 16);
+    I64 gone = 0;
+    for true {
+        I64 got = sys.getdents(fd, buf);
+        if got <= 0 {
+            break;
+        }
+        I64 o = 0;
+        for o < got {
+            I64 rl = dent_reclen(buf, o);
+            if rl <= 0 {
+                break;
+            }
+            I64 ln = dent_namelen(buf, o, got);
+            I64 at = o + sys.dent_nameoff();
+            U8* nm = buf[at : at + ln];
+            if str.eq(nm, ".") == false && str.eq(nm, "..") == false {
+                sys.unlink(path_join(cache, nm));
+                gone = gone + 1;
+            }
+            o = o + rl;
+        }
+    }
+    sys.close(fd);
+    sys.rmdir(cache);
+    "removed %d cached objects\n", gone;
+    return 0;
+}
+
+I32 main() {
+    if rt.argc() < 2 {
+        usage();
+        return 1;
+    }
+    U8* cmd = rt.arg(1);
+    if str.eq(cmd, "build") {
+        return cmd_build(2);
+    }
+    if str.eq(cmd, "clean") {
+        return cmd_clean(2);
+    }
+    if str.eq(cmd, "help") || str.eq(cmd, "-h") || str.eq(cmd, "--help") {
+        usage();
+        return 0;
+    }
+    if rt.argc() == 5 && str.eq(rt.arg(1), "--build") {
+        return build(rt.arg(2), rt.arg(3), rt.arg(4));
+    }
+    if rt.argc() >= 4 && str.eq(rt.arg(1), "--link") {
+        I64 first = 2;
+        if str.eq(rt.arg(2), "-target") {
+            _target_arg = 3;
+            need_valid_target();
+            first = 4;
+        }
+        if rt.argc() < first + 2 {
+            usage();
+            return 1;
+        }
+        asm.As* a = asm.as_new();
+        if str.eq(target_arch(), "arm64") {
+            a.isa = isa.A64;
+        }
+        for I64 i = first + 1; i < rt.argc(); i++ {
+            asm.assemble_file(a, readfile(rt.arg(i)));
+        }
+        U8* img = "";
+        if str.eq(target_os(), "macos") {
+            img = macho.image(a);
+        } else {
+            img = elf.image(a);
+        }
+        write_out(rt.arg(first), img);
+        "linked %d bytes: text %d, rodata %d, data %d, %d relocations\n",
+            img.len, a.tlen, a.rlen, a.dlen, a.nrel;
+        return 0;
+    }
+    I64 argbase = 1;
+    I64 lib = 0;
+    for rt.argc() > argbase && (str.eq(rt.arg(argbase), "-c")
+        || str.eq(rt.arg(argbase), "-noopt") || str.eq(rt.arg(argbase), "-target")) {
+        if str.eq(rt.arg(argbase), "-c") {
+            lib = 1;
+            argbase = argbase + 1;
+        } else if str.eq(rt.arg(argbase), "-target") {
+            if argbase + 1 >= rt.argc() {
+                diag.die("-target needs a name");
+            }
+            _target_arg = argbase + 1;
+            need_valid_target();
+            argbase = argbase + 2;
+        } else {
+            _noopt = 1;
+            argbase = argbase + 1;
+        }
+    }
+    if rt.argc() < argbase + 3 || str.eq(rt.arg(argbase), "-S") == false {
+        usage();
+        return 1;
+    }
+    ast.Ast* t = ast.ast_new(120000, 4 << 20);
+    ast.pkg_new(t, "");
+    U8* outpath = rt.arg(argbase + 1);
+    I64 first = argbase + 2;
+    if first == rt.argc() - 1 && is_dir(rt.arg(first)) {
+        load_pkg(t, rt.arg(first), 0);
+        ensure_rt(t, rt.arg(first));
+    } else {
+        for I64 i = first; i < rt.argc(); i++ {
+            U8* path = rt.arg(i);
+            ast.ast_addfile(t, path, 0);
+            parse.parse_program(lex.lex_new(t, path, readfile(path)));
+        }
+        U8* fdir = dirname_of(rt.arg(first));
+        load_imports(t, fdir, 0);
+        ensure_rt(t, fdir);
+    }
+    check.Ck* c = check.ck_new(t);
+    if str.eq(target_arch(), "arm64") {
+        c.isa = isa.A64;
+    }
+    c.libmode = lib;
+    if lib == 1 {
+        c.only = 0;
+    }
+    check.check_all(c);
+    gen.Em* e = gen.em_new(c);
+    if _noopt == 0 {
+        e.o.on = 1;
+        opt.op_run(e.o);
+    }
+    run_gen(e);
+    write_out(outpath, e.buf[0 : e.len]);
+    return 0;
+}

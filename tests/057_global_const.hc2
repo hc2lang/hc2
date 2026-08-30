@@ -1,0 +1,6 @@
+const I64 LIMIT = 10;
+
+I64 main() {
+    LIMIT = 11;
+    return 0;
+}

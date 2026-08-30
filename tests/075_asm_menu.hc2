@@ -1,0 +1,178 @@
+// Every instruction the asm menu can reach, exercised with values that tell
+// registers and widths apart. The encoder has no byte-for-byte oracle any
+// more: this is what keeps a wrong ModRM or a missing REX from hiding in a
+// row no other test happens to emit.
+I64 two(I64 a, I64 b) {
+    I64 r = 0;
+    asm {
+        MOV RAX, a
+        MOV RCX, b
+        ADD RAX, RCX
+        SUB RAX, 3
+        MOV RDX, RAX
+        AND RDX, 255
+        OR RDX, 256
+        XOR RDX, 1
+        IMUL RDX, 3
+        MOV RAX, RDX
+        MOV r, RAX
+    }
+    return r;
+}
+
+I64 shifts(I64 a) {
+    I64 r = 0;
+    asm {
+        MOV RAX, a
+        MOV RCX, 4
+        SHL RAX, CL
+        SHR RAX, 1
+        SAR RAX, 1
+        NOT RAX
+        NEG RAX
+        MOV r, RAX
+    }
+    return r;
+}
+
+// R8-R15 need REX.B/REX.R on both operands; a dropped bit lands elsewhere
+I64 high_regs(I64 a) {
+    I64 r = 0;
+    asm {
+        MOV R8, a
+        MOV R9, 7
+        ADD R8, R9
+        MOV R10, R8
+        IMUL R10, 2
+        MOV R11, R10
+        XCHG R11, R10
+        MOV R12, R11
+        MOV R13, 1
+        ADD R12, R13
+        MOV R14, R12
+        MOV R15, R14
+        MOV RAX, R15
+        MOV r, RAX
+    }
+    return r;
+}
+
+// narrow widths: 32-bit clears the top half, 16-bit needs the 66 prefix,
+// and the byte registers below SPL need a forced REX
+I64 widths(I64 a) {
+    I64 r = 0;
+    asm {
+        MOV RAX, a
+        MOV ECX, 1000000
+        ADD EAX, ECX
+        MOV DX, 300
+        ADD AX, DX
+        MOV SIL, 5
+        ADD AL, SIL
+        MOV r, RAX
+    }
+    return r;
+}
+
+I64 branches(I64 n) {
+    I64 r = 0;
+    asm {
+        MOV RAX, 0
+        MOV RCX, n
+    top:
+        CMP RCX, 0
+        JLE done
+        ADD RAX, RCX
+        DEC RCX
+        JMP top
+    done:
+        MOV r, RAX
+    }
+    return r;
+}
+
+I64 conds(I64 a, I64 b) {
+    I64 r = 0;
+    asm {
+        MOV RAX, 0
+        MOV RCX, a
+        MOV RDX, b
+        CMP RCX, RDX
+        JE eq
+        JL lt
+        JG gt
+        JMP done
+    eq:
+        MOV RAX, 1
+        JMP done
+    lt:
+        MOV RAX, 2
+        JMP done
+    gt:
+        MOV RAX, 3
+    done:
+        TEST RCX, RCX
+        JNE nz
+        ADD RAX, 100
+    nz:
+        MOV r, RAX
+    }
+    return r;
+}
+
+I64 divide(I64 a, I64 b) {
+    I64 r = 0;
+    asm {
+        MOV RAX, a
+        CQO
+        MOV RCX, b
+        IDIV RCX
+        MOV r, RAX
+    }
+    return r;
+}
+
+// the one-operand rows: unsigned mul/div use RDX:RAX implicitly
+I64 unsigned_ops(I64 a) {
+    I64 r = 0;
+    asm {
+        MOV RAX, a
+        MOV RCX, 3
+        MUL RCX
+        MOV RCX, 4
+        MOV RDX, 0
+        DIV RCX
+        INC RAX
+        NOP
+        MOV r, RAX
+    }
+    return r;
+}
+
+I64 stack_ops(I64 a) {
+    I64 r = 0;
+    asm {
+        MOV RAX, a
+        PUSH RAX
+        MOV RCX, 9
+        PUSH RCX
+        POP RDX
+        POP RAX
+        ADD RAX, RDX
+        MOV r, RAX
+    }
+    return r;
+}
+
+I32 main() {
+    "two %d\n", two(10, 5);
+    "shifts %d\n", shifts(3);
+    "high %d\n", high_regs(1);
+    "widths %d\n", widths(0);
+    "branches %d\n", branches(5);
+    "conds %d %d %d\n", conds(1, 1), conds(1, 2), conds(2, 1);
+    "divide %d\n", divide(-17, 5);
+    "unsigned %d\n", unsigned_ops(8);
+    "stack %d\n", stack_ops(4);
+    return 0;
+}

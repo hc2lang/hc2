@@ -1,0 +1,8 @@
+U0 f(I64... xs) {
+}
+
+I32 main() {
+    U8* s = "no";
+    f(1, s);
+    return 0;
+}

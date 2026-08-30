@@ -1,0 +1,2 @@
+before
+tests/071_fnptr_nullstr.hc2:4: trap: print of null

@@ -1,0 +1,10 @@
+I32 main() {
+    I32 a = 10;
+    asm {
+        MOV EAX, a
+        ADD EAX, 5
+        MOV a, EAX
+    }
+    "a: %d\n", a;
+    return 0;
+}

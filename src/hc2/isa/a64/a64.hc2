@@ -1,0 +1,540 @@
+
+import "str";
+import "hc2/isa";
+
+const I64 REG_X0 = 100;
+const I64 REG_FP = 129;
+const I64 REG_SP = 131;
+
+I64 reg(U8* s) {
+    if s.len >= 2 && (s[0] == 'X' || s[0] == 'x') {
+        I64 v = 0;
+        for I64 i = 1; i < s.len; i++ {
+            if s[i] < '0' || s[i] > '9' {
+                return -1;
+            }
+            v = v * 10 + (s[i] as I64) - '0';
+        }
+        if v <= 30 {
+            return isa.mkreg(REG_X0 + v, 8);
+        }
+        return -1;
+    }
+    if str.eq(s, "SP") {
+        return isa.mkreg(REG_SP, 8);
+    }
+    return -1;
+}
+
+I64 shape(U8* m) {
+    if str.eq(m, "LDR") {
+        return isa.SH_TWO;
+    }
+    if str.eq(m, "STR") {
+        return isa.SH_TWO;
+    }
+    if str.eq(m, "MOVZ") {
+        return isa.SH_TWO;
+    }
+    if str.eq(m, "EOR") {
+        return isa.SH_TWO;
+    }
+    if str.eq(m, "ADC") {
+        return isa.SH_TWO;
+    }
+    if str.eq(m, "SVC") {
+        return isa.SH_ONE;
+    }
+    return 0;
+}
+
+const I64 EQ = 0;
+const I64 NE = 1;
+const I64 CS = 2;
+const I64 CC = 3;
+const I64 MI = 4;
+const I64 PL = 5;
+const I64 VS = 6;
+const I64 VC = 7;
+const I64 HI = 8;
+const I64 LS = 9;
+const I64 GE = 10;
+const I64 LT = 11;
+const I64 GT = 12;
+const I64 LE = 13;
+const I64 AL = 14;
+
+const I64 SP = 31;
+const I64 ZR = 31;
+
+I64 addi(I64 rd, I64 rn, I64 imm12, I64 sh) {
+    return 0x91000000 | (sh << 22) | (imm12 << 10) | (rn << 5) | rd;
+}
+
+I64 subi(I64 rd, I64 rn, I64 imm12, I64 sh) {
+    return 0xD1000000 | (sh << 22) | (imm12 << 10) | (rn << 5) | rd;
+}
+
+I64 addsi(I64 rd, I64 rn, I64 imm12, I64 sh) {
+    return 0xB1000000 | (sh << 22) | (imm12 << 10) | (rn << 5) | rd;
+}
+
+I64 subsi(I64 rd, I64 rn, I64 imm12, I64 sh) {
+    return 0xF1000000 | (sh << 22) | (imm12 << 10) | (rn << 5) | rd;
+}
+
+I64 cmpi(I64 rn, I64 imm12) {
+    return subsi(ZR, rn, imm12, 0);
+}
+
+I64 movz(I64 rd, I64 imm16, I64 hw) {
+    return 0xD2800000 | (hw << 21) | (imm16 << 5) | rd;
+}
+
+I64 movk(I64 rd, I64 imm16, I64 hw) {
+    return 0xF2800000 | (hw << 21) | (imm16 << 5) | rd;
+}
+
+I64 movn(I64 rd, I64 imm16, I64 hw) {
+    return 0x92800000 | (hw << 21) | (imm16 << 5) | rd;
+}
+
+I64 andi(I64 rd, I64 rn, I64 bm) {
+    return 0x92000000 | ((bm >> 12) << 22) | (((bm >> 6) & 0x3f) << 16) | ((bm & 0x3f) << 10) | (rn << 5) | rd;
+}
+
+I64 orri(I64 rd, I64 rn, I64 bm) {
+    return 0xB2000000 | ((bm >> 12) << 22) | (((bm >> 6) & 0x3f) << 16) | ((bm & 0x3f) << 10) | (rn << 5) | rd;
+}
+
+I64 eori(I64 rd, I64 rn, I64 bm) {
+    return 0xD2000000 | ((bm >> 12) << 22) | (((bm >> 6) & 0x3f) << 16) | ((bm & 0x3f) << 10) | (rn << 5) | rd;
+}
+
+I64 tsti(I64 rn, I64 bm) {
+    return 0xF2000000 | ((bm >> 12) << 22) | (((bm >> 6) & 0x3f) << 16) | ((bm & 0x3f) << 10) | (rn << 5) | ZR;
+}
+
+I64 addr(I64 rd, I64 rn, I64 rm) {
+    return 0x8B000000 | (rm << 16) | (rn << 5) | rd;
+}
+
+I64 subr(I64 rd, I64 rn, I64 rm) {
+    return 0xCB000000 | (rm << 16) | (rn << 5) | rd;
+}
+
+I64 cmpr(I64 rn, I64 rm) {
+    return 0xEB000000 | (rm << 16) | (rn << 5) | ZR;
+}
+
+I64 andr(I64 rd, I64 rn, I64 rm) {
+    return 0x8A000000 | (rm << 16) | (rn << 5) | rd;
+}
+
+I64 orrr(I64 rd, I64 rn, I64 rm) {
+    return 0xAA000000 | (rm << 16) | (rn << 5) | rd;
+}
+
+I64 movr(I64 rd, I64 rm) {
+    return orrr(rd, ZR, rm);
+}
+
+I64 eorr(I64 rd, I64 rn, I64 rm) {
+    return 0xCA000000 | (rm << 16) | (rn << 5) | rd;
+}
+
+I64 adcr(I64 rd, I64 rn, I64 rm) {
+    return 0x9A000000 | (rm << 16) | (rn << 5) | rd;
+}
+
+I64 tstr(I64 rn, I64 rm) {
+    return 0xEA000000 | (rm << 16) | (rn << 5) | ZR;
+}
+
+I64 lslv(I64 rd, I64 rn, I64 rm) {
+    return 0x9AC02000 | (rm << 16) | (rn << 5) | rd;
+}
+
+I64 lsrv(I64 rd, I64 rn, I64 rm) {
+    return 0x9AC02400 | (rm << 16) | (rn << 5) | rd;
+}
+
+I64 asrv(I64 rd, I64 rn, I64 rm) {
+    return 0x9AC02800 | (rm << 16) | (rn << 5) | rd;
+}
+
+I64 madd(I64 rd, I64 rn, I64 rm, I64 ra) {
+    return 0x9B000000 | (rm << 16) | (ra << 10) | (rn << 5) | rd;
+}
+
+I64 mul(I64 rd, I64 rn, I64 rm) {
+    return madd(rd, rn, rm, ZR);
+}
+
+I64 msub(I64 rd, I64 rn, I64 rm, I64 ra) {
+    return 0x9B008000 | (rm << 16) | (ra << 10) | (rn << 5) | rd;
+}
+
+I64 sdiv(I64 rd, I64 rn, I64 rm) {
+    return 0x9AC00C00 | (rm << 16) | (rn << 5) | rd;
+}
+
+I64 udiv(I64 rd, I64 rn, I64 rm) {
+    return 0x9AC00800 | (rm << 16) | (rn << 5) | rd;
+}
+
+I64 csinc(I64 rd, I64 rn, I64 rm, I64 cond) {
+    return 0x9A800400 | (rm << 16) | (cond << 12) | (rn << 5) | rd;
+}
+
+I64 cset(I64 rd, I64 cond) {
+    return csinc(rd, ZR, ZR, cond ^ 1);
+}
+
+I64 csel(I64 rd, I64 rn, I64 rm, I64 cond) {
+    return 0x9A800000 | (rm << 16) | (cond << 12) | (rn << 5) | rd;
+}
+
+I64 sxtb(I64 rd, I64 rn) {
+    return 0x93401C00 | (rn << 5) | rd;
+}
+
+I64 sxth(I64 rd, I64 rn) {
+    return 0x93403C00 | (rn << 5) | rd;
+}
+
+I64 sxtw(I64 rd, I64 rn) {
+    return 0x93407C00 | (rn << 5) | rd;
+}
+
+I64 uxtb(I64 rd, I64 rn) {
+    return 0x53001C00 | (rn << 5) | rd;
+}
+
+I64 uxth(I64 rd, I64 rn) {
+    return 0x53003C00 | (rn << 5) | rd;
+}
+
+I64 movw(I64 rd, I64 rm) {
+    return 0x2A0003E0 | (rm << 16) | rd;
+}
+
+I64 lsli(I64 rd, I64 rn, I64 k) {
+    return 0xD3400000 | (((64 - k) & 63) << 16) | ((63 - k) << 10) | (rn << 5) | rd;
+}
+
+I64 lsri(I64 rd, I64 rn, I64 k) {
+    return 0xD3400000 | (k << 16) | (63 << 10) | (rn << 5) | rd;
+}
+
+I64 addr_sh(I64 rd, I64 rn, I64 rm, I64 sh) {
+    return 0x8B000000 | (rm << 16) | (sh << 10) | (rn << 5) | rd;
+}
+
+I64 ldrx(I64 rt, I64 rn, I64 off) {
+    return 0xF9400000 | ((off / 8) << 10) | (rn << 5) | rt;
+}
+
+I64 strx(I64 rt, I64 rn, I64 off) {
+    return 0xF9000000 | ((off / 8) << 10) | (rn << 5) | rt;
+}
+
+I64 ldrw(I64 rt, I64 rn, I64 off) {
+    return 0xB9400000 | ((off / 4) << 10) | (rn << 5) | rt;
+}
+
+I64 strw(I64 rt, I64 rn, I64 off) {
+    return 0xB9000000 | ((off / 4) << 10) | (rn << 5) | rt;
+}
+
+I64 ldrsw(I64 rt, I64 rn, I64 off) {
+    return 0xB9800000 | ((off / 4) << 10) | (rn << 5) | rt;
+}
+
+I64 ldrh(I64 rt, I64 rn, I64 off) {
+    return 0x79400000 | ((off / 2) << 10) | (rn << 5) | rt;
+}
+
+I64 strh(I64 rt, I64 rn, I64 off) {
+    return 0x79000000 | ((off / 2) << 10) | (rn << 5) | rt;
+}
+
+I64 ldrsh(I64 rt, I64 rn, I64 off) {
+    return 0x79800000 | ((off / 2) << 10) | (rn << 5) | rt;
+}
+
+I64 ldrb(I64 rt, I64 rn, I64 off) {
+    return 0x39400000 | (off << 10) | (rn << 5) | rt;
+}
+
+I64 strb(I64 rt, I64 rn, I64 off) {
+    return 0x39000000 | (off << 10) | (rn << 5) | rt;
+}
+
+I64 ldrsb(I64 rt, I64 rn, I64 off) {
+    return 0x39800000 | (off << 10) | (rn << 5) | rt;
+}
+
+I64 ldur(I64 rt, I64 rn, I64 off) {
+    return 0xF8400000 | ((off & 0x1ff) << 12) | (rn << 5) | rt;
+}
+
+I64 stur(I64 rt, I64 rn, I64 off) {
+    return 0xF8000000 | ((off & 0x1ff) << 12) | (rn << 5) | rt;
+}
+
+I64 ldrx_post(I64 rt, I64 rn, I64 off) {
+    return 0xF8400400 | ((off & 0x1ff) << 12) | (rn << 5) | rt;
+}
+
+I64 ldrx_pre(I64 rt, I64 rn, I64 off) {
+    return 0xF8400C00 | ((off & 0x1ff) << 12) | (rn << 5) | rt;
+}
+
+I64 strx_post(I64 rt, I64 rn, I64 off) {
+    return 0xF8000400 | ((off & 0x1ff) << 12) | (rn << 5) | rt;
+}
+
+I64 strx_pre(I64 rt, I64 rn, I64 off) {
+    return 0xF8000C00 | ((off & 0x1ff) << 12) | (rn << 5) | rt;
+}
+
+I64 stp(I64 rt, I64 rt2, I64 rn, I64 off) {
+    return 0xA9000000 | (((off / 8) & 0x7f) << 15) | (rt2 << 10) | (rn << 5) | rt;
+}
+
+I64 ldp(I64 rt, I64 rt2, I64 rn, I64 off) {
+    return 0xA9400000 | (((off / 8) & 0x7f) << 15) | (rt2 << 10) | (rn << 5) | rt;
+}
+
+I64 stp_pre(I64 rt, I64 rt2, I64 rn, I64 off) {
+    return 0xA9800000 | (((off / 8) & 0x7f) << 15) | (rt2 << 10) | (rn << 5) | rt;
+}
+
+I64 ldp_post(I64 rt, I64 rt2, I64 rn, I64 off) {
+    return 0xA8C00000 | (((off / 8) & 0x7f) << 15) | (rt2 << 10) | (rn << 5) | rt;
+}
+
+I64 b(I64 off) {
+    return 0x14000000 | ((off / 4) & 0x3ffffff);
+}
+
+I64 bl(I64 off) {
+    return 0x94000000 | ((off / 4) & 0x3ffffff);
+}
+
+I64 bcond(I64 cond, I64 off) {
+    return 0x54000000 | (((off / 4) & 0x7ffff) << 5) | cond;
+}
+
+I64 cbz(I64 rt, I64 off) {
+    return 0xB4000000 | (((off / 4) & 0x7ffff) << 5) | rt;
+}
+
+I64 cbnz(I64 rt, I64 off) {
+    return 0xB5000000 | (((off / 4) & 0x7ffff) << 5) | rt;
+}
+
+I64 br(I64 rn) {
+    return 0xD61F0000 | (rn << 5);
+}
+
+I64 blr(I64 rn) {
+    return 0xD63F0000 | (rn << 5);
+}
+
+I64 ret() {
+    return 0xD65F03C0;
+}
+
+I64 adrp(I64 rd, I64 pages) {
+    return 0x90000000 | ((pages & 3) << 29) | (((pages >> 2) & 0x7ffff) << 5) | rd;
+}
+
+I64 svc(I64 imm16) {
+    return 0xD4000001 | (imm16 << 5);
+}
+
+I64 _bit(I64 v, I64 i) {
+    return (v >> i) & 1;
+}
+
+I64 _emask(I64 e) {
+    if e == 64 {
+        return 0 - 1;
+    }
+    return (1 << e) - 1;
+}
+
+I64 _ror(I64 x, I64 r, I64 e) {
+    if r == 0 {
+        return x & _emask(e);
+    }
+    return (((x >> r) | (x << (e - r))) & _emask(e));
+}
+
+Bool _replicates(I64 v, I64 e) {
+    if e == 64 {
+        return true;
+    }
+    I64 elem = v & _emask(e);
+    for I64 k = 1; k < 64 / e; k++ {
+        if ((v >> (k * e)) & _emask(e)) != elem {
+            return false;
+        }
+    }
+    return true;
+}
+
+I64 _pack_nrs(I64 e, I64 immr, I64 s) {
+    I64 imms = ((0 - (2 * e)) & 0x3f) | (s - 1);
+    I64 n = 0;
+    if e == 64 {
+        n = 1;
+    }
+    return (n << 12) | (immr << 6) | imms;
+}
+
+I64 _rotated_run_encoding(I64 elem, I64 e) {
+    I64 s = 0;
+    for I64 i = 0; i < e; i++ {
+        s = s + _bit(elem, i);
+    }
+    if s == 0 || s == e {
+        return 0 - 1;
+    }
+    for I64 p = 0; p < e; p++ {
+        if _bit(elem, (p + e - 1) % e) == 0 && _bit(elem, p) == 1 {
+            I64 immr = (e - p) % e;
+            I64 run = _emask(e);
+            if s < e {
+                run = (1 << s) - 1;
+            }
+            if _ror(run, immr, e) == elem {
+                return _pack_nrs(e, immr, s);
+            }
+        }
+    }
+    return 0 - 1;
+}
+
+I64 bitmask(I64 v) {
+    if v == 0 || v == (0 - 1) {
+        return 0 - 1;
+    }
+    I64 e = 2;
+    for e <= 64 {
+        if _replicates(v, e) {
+            return _rotated_run_encoding(v & _emask(e), e);
+        }
+        e = e * 2;
+    }
+    return 0 - 1;
+}
+
+I64 movseq(I64* w, I64 rd, I64 v) {
+    I64 nz = 0;
+    I64 nf = 0;
+    for I64 k = 0; k < 4; k++ {
+        I64 c = (v >> (k * 16)) & 0xffff;
+        if c != 0 {
+            nz = nz + 1;
+        }
+        if c != 0xffff {
+            nf = nf + 1;
+        }
+    }
+    if nz <= 1 {
+        I64 hw = 0;
+        for I64 k = 0; k < 4; k++ {
+            if ((v >> (k * 16)) & 0xffff) != 0 {
+                hw = k;
+            }
+        }
+        w[0] = movz(rd, (v >> (hw * 16)) & 0xffff, hw);
+        return 1;
+    }
+    if nf <= 1 {
+        I64 hw = 0;
+        for I64 k = 0; k < 4; k++ {
+            if ((v >> (k * 16)) & 0xffff) != 0xffff {
+                hw = k;
+            }
+        }
+        I64 c = (v >> (hw * 16)) & 0xffff;
+        w[0] = movn(rd, c ^ 0xffff, hw);
+        return 1;
+    }
+    I64 bm = bitmask(v);
+    if bm >= 0 {
+        w[0] = orri(rd, ZR, bm);
+        return 1;
+    }
+    I64 n = 0;
+    if nf < nz {
+        for I64 k = 0; k < 4; k++ {
+            I64 c = (v >> (k * 16)) & 0xffff;
+            if c != 0xffff {
+                if n == 0 {
+                    w[n] = movn(rd, c ^ 0xffff, k);
+                } else {
+                    w[n] = movk(rd, c, k);
+                }
+                n = n + 1;
+            }
+        }
+        return n;
+    }
+    for I64 k = 0; k < 4; k++ {
+        I64 c = (v >> (k * 16)) & 0xffff;
+        if c != 0 {
+            if n == 0 {
+                w[n] = movz(rd, c, k);
+            } else {
+                w[n] = movk(rd, c, k);
+            }
+            n = n + 1;
+        }
+    }
+    return n;
+}
+
+I64 fmovdx(I64 rd, I64 rn) {
+    return 0x9E670000 | (rn << 5) | rd;
+}
+
+I64 fmovxd(I64 rd, I64 rn) {
+    return 0x9E660000 | (rn << 5) | rd;
+}
+
+I64 faddd(I64 rd, I64 rn, I64 rm) {
+    return 0x1E602800 | (rm << 16) | (rn << 5) | rd;
+}
+
+I64 fsubd(I64 rd, I64 rn, I64 rm) {
+    return 0x1E603800 | (rm << 16) | (rn << 5) | rd;
+}
+
+I64 fmuld(I64 rd, I64 rn, I64 rm) {
+    return 0x1E600800 | (rm << 16) | (rn << 5) | rd;
+}
+
+I64 fdivd(I64 rd, I64 rn, I64 rm) {
+    return 0x1E601800 | (rm << 16) | (rn << 5) | rd;
+}
+
+I64 fcmpd(I64 rn, I64 rm) {
+    return 0x1E602000 | (rm << 16) | (rn << 5);
+}
+
+I64 fnegd(I64 rd, I64 rn) {
+    return 0x1E614000 | (rn << 5) | rd;
+}
+
+I64 scvtfd(I64 rd, I64 rn) {
+    return 0x9E620000 | (rn << 5) | rd;
+}
+
+I64 fcvtzsd(I64 rd, I64 rn) {
+    return 0x9E780000 | (rn << 5) | rd;
+}

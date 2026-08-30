@@ -1,0 +1,18 @@
+struct Pt {
+    I64 x;
+    I64 y;
+    I64 _tag;          // private to geom
+}
+
+Pt make(I64 x, I64 y) {
+    Pt p = {x, y, 99};
+    return p;
+}
+
+I64 sum(Pt* p) {
+    return p.x + p.y + _bonus();
+}
+
+I64 _bonus() {
+    return 1;
+}

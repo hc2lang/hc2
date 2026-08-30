@@ -1,0 +1,8 @@
+struct S {
+    I64 a;
+}
+
+I32 main() {
+    S* p = 0 as S*;
+    return 0;
+}

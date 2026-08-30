@@ -1,0 +1,20 @@
+struct Pt {
+    I64 x;
+    U8* tag;
+}
+
+I32 main() {
+    U8* names[3] = {"alpha", "beta", "gamma"};
+    for I64 i = 0; i < 3; i++ {
+        "%s ", names[i];
+    }
+    "\n";
+
+    Pt ps[2] = {{10, "first"}, {20, "second"}};
+    "%d %s / %d %s\n", ps[0].x, ps[0].tag, ps[1].x, ps[1].tag;
+
+    I64 j = 1;
+    ps[j].x = 99;
+    "changed to %d\n", ps[j].x;
+    return 0;
+}

@@ -1,0 +1,2 @@
+const I64 _SECRET = 1;
+const I64 OPEN = 2;

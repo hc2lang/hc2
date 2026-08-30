@@ -1,0 +1,6 @@
+import "sys";
+
+U0 die(U8* msg) {
+    "hc2c1: %s\n", msg;
+    sys.exit(1);
+}

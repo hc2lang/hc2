@@ -1,0 +1,6 @@
+import "pkga";
+
+I32 main() {
+    "%d\n", pkga._secret();
+    return 0;
+}

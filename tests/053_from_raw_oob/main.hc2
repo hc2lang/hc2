@@ -1,0 +1,11 @@
+import "sys";
+
+I32 main() {
+    I64 base = sys.mmap(1 << 16);
+    U8* p = sys.from_raw(base + 16, 8);
+    p[7] = 1;
+    "in bounds ok\n";
+    I64 i = 8;
+    p[i] = 1;
+    return 0;
+}

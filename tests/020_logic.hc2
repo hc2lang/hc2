@@ -1,0 +1,36 @@
+import "heap";
+
+I32 bump(I32* c) {
+    c[0] = c[0] + 1;
+    return c[0];
+}
+
+I32 main() {
+    I32* c = heap.alloc(sizeof(I32)) as I32*;
+    c[0] = 0;
+    Bool x = 1 == 2 && bump(c) == 1;
+    if x {
+        "bad\n";
+    } else {
+        "and-sc ok %d\n", c[0];
+    }
+    Bool y = 1 == 1 || bump(c) == 1;
+    if y {
+        "or-sc ok %d\n", c[0];
+    }
+    Bool z = 1 == 1 && bump(c) == 1;
+    if z {
+        "and-run %d\n", c[0];
+    }
+    for I32 i = 0; i < 10; i++ {
+        if i == 3 {
+            continue;
+        }
+        if i == 6 {
+            break;
+        }
+        "%d", i;
+    }
+    "\n";
+    return 0;
+}

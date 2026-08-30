@@ -1,0 +1,6 @@
+I32 main() {
+    U8 a = 1;
+    I32 b = 2;
+    I32 c = a + b;
+    return 0;
+}

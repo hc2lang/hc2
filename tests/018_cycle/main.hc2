@@ -1,0 +1,5 @@
+import "a";
+
+I32 main() {
+    return a.f();
+}

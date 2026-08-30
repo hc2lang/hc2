@@ -1,0 +1,50 @@
+// wider syntax probe: bit ops, logic, loops, defer, sizeof, &, casts
+import "heap";
+import "sys";
+
+struct Node {
+    I64 kind;
+    U8* text;
+    Node* next;
+}
+
+U0 helper(Node* n, I64 flags) {
+    I64 mask = (flags & 0xff) << 2 | 3;
+    if mask > 100 {
+        "big %x\n", mask;
+    } else if mask == 3 {
+        "three\n";
+    } else {
+        "small %d\n", mask;
+    }
+    for I64 i = 0; i < 10; i++ {
+        if i == 2 {
+            continue;
+        }
+        if i == 5 {
+            break;
+        }
+        n.kind = n.kind + i;
+    }
+    "kind %d len %d\n", n.kind, n.text.len;
+}
+
+I32 main() {
+    Node* n = heap.alloc(sizeof(Node)) as Node*;
+    defer heap.free(n as U8*);
+    n.kind = 0;
+    n.text = "abc";
+    helper(n, 0x11);
+    I64 sz = sizeof(Node);
+    I64 arr[2] = {10, 20};
+    I64* p = &arr;                 // & of an array: the whole thing, bounds included
+    U8 c = 'x';
+    Bool ok = sz > 0 && c == 'x' || false;
+    if ok {
+        "ok sz=%d p0=%d c=%c\n", sz, p[0], c as I64;
+    }
+    I64 big = 300;
+    "wrap %d\n", big as U8 as I64;
+    sys.exit(0);
+    return 0;
+}

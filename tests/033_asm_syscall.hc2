@@ -1,0 +1,28 @@
+// write(1, msg, len) with no help from the compiler's print statement
+U0 raw_write(I64 fd, I64 addr, I64 len) {
+    asm {
+        MOV RAX, 1
+        MOV RDI, fd
+        MOV RSI, addr
+        MOV RDX, len
+        SYSCALL
+    }
+}
+
+I32 main() {
+    U8* msg = "syscall from hc2\n";
+    raw_write(1, msg.addr, msg.len);
+    I64 n = 0;
+    I64 i = 0;
+    asm {
+        MOV RCX, 5
+        XOR RAX, RAX
+    loop:
+        ADD RAX, RCX
+        DEC RCX
+        JNZ loop
+        MOV n, RAX
+    }
+    "sum %d\n", n;
+    return 0;
+}

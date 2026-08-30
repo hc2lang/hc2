@@ -1,0 +1,18 @@
+I32 main() {
+    U8 x = 200;
+    x = x + 100;                 // 300 wraps to 44 in U8
+    "x = %d\n", x;
+    I64 big = 1000000;
+    "big*7 = %d\n", big * 7;
+    "hex: %x\n", 48879;
+    "%c%c\n", 104, 105;
+    "s: %s\n", "str";
+    Bool ok = 3 > 2;
+    if ok {
+        "ok\n";
+    }
+    I64 neg = -5;
+    "neg: %d\n", neg;
+    "div: %d rem: %d\n", 17 / 5, 17 % 5;
+    return 0;
+}

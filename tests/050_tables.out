@@ -1,0 +1,5 @@
+mov opcode 89 ext -1
+add opcode 1 ext 0
+sub opcode 29 ext 5
+cmp opcode 39 ext 7
+primes sum 28

@@ -1,0 +1,8 @@
+and 15
+or ff
+xor 5
+shl 1024
+sar -4
+shr 4
+prec 17
+chr A

@@ -1,0 +1,806 @@
+import "hc2/ast";
+import "hc2/check";
+import "heap";
+
+const I64 HOIST_ALL     = 1;
+const I64 HOIST_KEEPGEN = 2;
+
+struct W {
+    I64 ioff;
+    I64 noff;
+    I64 soff;
+    I64 aoff;
+    I64 esz;
+    I64 wr;
+    I64 calls;
+    I64 nas;
+    I64* aset;
+    I64 nmk;
+    I64* mks;
+    I64 bad;
+}
+
+struct Op {
+    check.Ck* c;
+    ast.Ast* t;
+    I64 on;
+    I64* skip;
+    I64* hoist;
+    I64* poison;
+    I64* skip2;
+    I64* skipa;
+    I64 wn;
+    I64* wroot;
+    I64* waoff;
+    I64* wsz;
+    I64* wwr;
+    I64* ha;
+    I64* hi;
+    I64* hn;
+    I64* hnc;
+    I64* hs;
+    I64* hesz;
+    I64* hw;
+    I64* hlb;
+    I64* rlo1;
+    I64* rlo2;
+    I64 rcn;
+    I64* rco;
+    I64* rcc;
+    I64 rbad;
+    W* w;
+}
+
+Op* op_new(check.Ck* c) {
+    Op* o = heap.alloc(sizeof(Op)) as Op*;
+    o.c = c;
+    o.t = c.t;
+    o.on = 0;
+    I64 cap = c.t.cap;
+    o.skip = heap.alloc(cap * sizeof(I64)) as I64*;
+    o.hoist = heap.alloc(cap * sizeof(I64)) as I64*;
+    o.poison = heap.alloc(64 * sizeof(I64)) as I64*;
+    o.skip2 = heap.alloc(cap * sizeof(I64)) as I64*;
+    o.skipa = heap.alloc(cap * sizeof(I64)) as I64*;
+    o.wn = 0;
+    o.wroot = heap.alloc(64 * sizeof(I64)) as I64*;
+    o.waoff = heap.alloc(64 * sizeof(I64)) as I64*;
+    o.wsz = heap.alloc(64 * sizeof(I64)) as I64*;
+    o.wwr = heap.alloc(64 * sizeof(I64)) as I64*;
+    o.ha = heap.alloc(cap * sizeof(I64)) as I64*;
+    o.hi = heap.alloc(cap * sizeof(I64)) as I64*;
+    o.hn = heap.alloc(cap * sizeof(I64)) as I64*;
+    o.hnc = heap.alloc(cap * sizeof(I64)) as I64*;
+    o.hs = heap.alloc(cap * sizeof(I64)) as I64*;
+    o.hesz = heap.alloc(cap * sizeof(I64)) as I64*;
+    o.hw = heap.alloc(cap * sizeof(I64)) as I64*;
+    o.hlb = heap.alloc(cap * sizeof(I64)) as I64*;
+    o.rlo1 = heap.alloc(cap * sizeof(I64)) as I64*;
+    o.rlo2 = heap.alloc(cap * sizeof(I64)) as I64*;
+    o.rcn = 0;
+    o.rco = heap.alloc(64 * sizeof(I64)) as I64*;
+    o.rcc = heap.alloc(64 * sizeof(I64)) as I64*;
+    o.rbad = 0;
+    W* w = heap.alloc(sizeof(W)) as W*;
+    w.aset = heap.alloc(128 * sizeof(I64)) as I64*;
+    w.mks = heap.alloc(256 * sizeof(I64)) as I64*;
+    o.w = w;
+    return o;
+}
+
+U0 _asg(W* w, I64 off) {
+    if w.nas >= 128 {
+        w.bad = 1;
+        return;
+    }
+    w.aset[w.nas] = off;
+    w.nas = w.nas + 1;
+}
+
+I64 _mai(Op* o, W* w, I64 n, I64 wr) {
+    ast.Ast* t = o.t;
+    if ast.nop(t, n) == ast.IDX_LOCAL || ast.nop(t, n) == ast.IDX_TABLE {
+        return 0;
+    }
+    I64 b = ast.na(t, n);
+    I64 s = ast.nb(t, n);
+    if ast.nkind(t, b) != ast.ND_VAR || ast.nkind(t, s) != ast.ND_VAR {
+        return 0;
+    }
+    if ast.ng(t, s, ast.VAR_OFF) != w.ioff {
+        return 0;
+    }
+    I64 esz = ast.ng(t, n, ast.INDEX_ESZ);
+    if esz != 1 && esz != 2 && esz != 4 && esz != 8 {
+        return 0;
+    }
+    I64 boff = ast.ng(t, b, ast.VAR_OFF);
+    if w.aoff < 0 {
+        w.aoff = boff;
+        w.esz = esz;
+    }
+    if boff != w.aoff || esz != w.esz {
+        return 0;
+    }
+    if w.nmk >= 256 {
+        return 0;
+    }
+    w.mks[w.nmk] = n;
+    w.nmk = w.nmk + 1;
+    if wr != 0 {
+        w.wr = 1;
+    }
+    return 1;
+}
+
+U0 _scan(Op* o, W* w, I64 n) {
+    if n == 0 || w.bad != 0 {
+        return;
+    }
+    ast.Ast* t = o.t;
+    I64 k = ast.nkind(t, n);
+    if k == ast.ND_NUM || k == ast.ND_STR || k == ast.ND_NULL || k == ast.ND_SIZEOF
+        || k == ast.ND_VAR || k == ast.ND_GVAR
+        || k == ast.ND_BREAK || k == ast.ND_CONT {
+        return;
+    }
+    if k == ast.ND_NEG || k == ast.ND_AS || k == ast.ND_EXPR
+        || k == ast.ND_RETURN || k == ast.ND_FIELD {
+        _scan(o, w, ast.na(t, n));
+        return;
+    }
+    if k == ast.ND_BIN || k == ast.ND_SLICE {
+        _scan(o, w, ast.na(t, n));
+        _scan(o, w, ast.nb(t, n));
+        _scan(o, w, ast.nc(t, n));
+        return;
+    }
+    if k == ast.ND_INDEX {
+        if _mai(o, w, n, 0) != 0 {
+            return;
+        }
+        _scan(o, w, ast.na(t, n));
+        _scan(o, w, ast.nb(t, n));
+        return;
+    }
+    if k == ast.ND_ASSIGN {
+        I64 l = ast.na(t, n);
+        I64 lk = ast.nkind(t, l);
+        if lk == ast.ND_VAR {
+            _asg(w, ast.ng(t, l, ast.VAR_OFF));
+        } else if lk == ast.ND_GVAR {
+        } else if lk == ast.ND_INDEX {
+            if ast.nop(t, l) == ast.IDX_LOCAL || ast.nop(t, l) == ast.IDX_TABLE {
+                _scan(o, w, ast.na(t, l));
+                _scan(o, w, ast.nb(t, l));
+            } else if _mai(o, w, l, 1) == 0 {
+                w.bad = 1;
+                return;
+            }
+        } else if lk == ast.ND_FIELD {
+            if ast.ng(t, l, ast.FIELD_MODE) != ast.FM_DIRECT {
+                w.bad = 1;
+                return;
+            }
+            _scan(o, w, ast.na(t, l));
+        } else {
+            w.bad = 1;
+            return;
+        }
+        _scan(o, w, ast.nb(t, n));
+        return;
+    }
+    if k == ast.ND_CALL {
+        w.calls = 1;
+        _scan(o, w, ast.na(t, n));
+        for I64 a = ast.nb(t, n); a != 0; a = ast.nnext(t, a) {
+            _scan(o, w, a);
+        }
+        return;
+    }
+    if k == ast.ND_PRINT {
+        w.calls = 1;
+        for I64 a = ast.na(t, n); a != 0; a = ast.nnext(t, a) {
+            _scan(o, w, a);
+        }
+        return;
+    }
+    if k == ast.ND_INCDEC {
+        _asg(w, ast.ng(t, n, ast.INC_OFF));
+        return;
+    }
+    if k == ast.ND_DECL {
+        if ast.ng(t, n, ast.N_DALEN) >= 0 {
+            w.bad = 1;
+            return;
+        }
+        _scan(o, w, ast.na(t, n));
+        for I64 x = ast.nb(t, n); x != 0; x = ast.nnext(t, x) {
+            _scan(o, w, x);
+        }
+        return;
+    }
+    if k == ast.ND_IF {
+        _scan(o, w, ast.na(t, n));
+        _scan(o, w, ast.nb(t, n));
+        _scan(o, w, ast.nc(t, n));
+        return;
+    }
+    if k == ast.ND_FOR {
+        _scan(o, w, ast.na(t, n));
+        _scan(o, w, ast.nb(t, n));
+        _scan(o, w, ast.nc(t, n));
+        _scan(o, w, ast.nd(t, n));
+        return;
+    }
+    if k == ast.ND_BLOCK {
+        if ast.nop(t, n) == ast.BLK_UNSAFE {
+            w.bad = 1;
+            return;
+        }
+        for I64 s = ast.na(t, n); s != 0; s = ast.nnext(t, s) {
+            _scan(o, w, s);
+        }
+        return;
+    }
+    w.bad = 1;
+}
+
+U0 _try(Op* o, I64 f) {
+    ast.Ast* t = o.t;
+    I64 init = ast.na(t, f);
+    I64 cond = ast.nb(t, f);
+    I64 post = ast.nc(t, f);
+    if init == 0 || post == 0 {
+        return;
+    }
+    if ast.nkind(t, init) != ast.ND_DECL || ast.ng(t, init, ast.N_DALEN) >= 0
+        || ast.ng(t, init, ast.N_DKIND) != ast.SK_I64 {
+        return;
+    }
+    I64 ioff = ast.ng(t, init, ast.DECL_OFF);
+    if ast.nkind(t, cond) != ast.ND_BIN || ast.nop(t, cond) != ast.OP_LT {
+        return;
+    }
+    I64 cl = ast.na(t, cond);
+    I64 cr = ast.nb(t, cond);
+    if ast.nkind(t, cl) != ast.ND_VAR || ast.ng(t, cl, ast.VAR_OFF) != ioff {
+        return;
+    }
+    I64 noff = -1;
+    I64 bc = 0;
+    I64 lboff = -1;
+    if ast.nkind(t, cr) == ast.ND_NUM {
+        bc = ast.ng(t, cr, ast.N_IVAL);
+    } else if ast.nkind(t, cr) == ast.ND_VAR {
+        if check.tp_kind(check.get_ty(o.c, cr)) != ast.SK_I64 {
+            return;
+        }
+        noff = ast.ng(t, cr, ast.VAR_OFF);
+        if noff == ioff {
+            return;
+        }
+    } else if ast.nkind(t, cr) == ast.ND_FIELD && ast.nop(t, cr) == ast.FLD_LEN
+        && ast.nkind(t, ast.na(t, cr)) == ast.ND_VAR {
+        lboff = ast.ng(t, ast.na(t, cr), ast.VAR_OFF);
+    } else {
+        return;
+    }
+    I64 soff = -1;
+    if ast.nkind(t, post) == ast.ND_INCDEC {
+        if ast.ng(t, post, ast.INC_OFF) != ioff || ast.ng(t, post, ast.N_IVAL) != 1 {
+            return;
+        }
+    } else if ast.nkind(t, post) == ast.ND_ASSIGN {
+        I64 pl = ast.na(t, post);
+        I64 pr = ast.nb(t, post);
+        if ast.nkind(t, pl) != ast.ND_VAR || ast.ng(t, pl, ast.VAR_OFF) != ioff {
+            return;
+        }
+        if ast.nkind(t, pr) != ast.ND_BIN || ast.nop(t, pr) != ast.OP_ADD {
+            return;
+        }
+        I64 sl = ast.na(t, pr);
+        I64 sr = ast.nb(t, pr);
+        if ast.nkind(t, sl) != ast.ND_VAR || ast.ng(t, sl, ast.VAR_OFF) != ioff {
+            return;
+        }
+        if ast.nkind(t, sr) == ast.ND_NUM {
+            if ast.ng(t, sr, ast.N_IVAL) < 1 || ast.ng(t, sr, ast.N_IVAL) > (1 << 27) {
+                return;
+            }
+        } else if ast.nkind(t, sr) == ast.ND_VAR {
+            if check.tp_kind(check.get_ty(o.c, sr)) != ast.SK_I64 {
+                return;
+            }
+            soff = ast.ng(t, sr, ast.VAR_OFF);
+            if soff == ioff {
+                return;
+            }
+        } else {
+            return;
+        }
+    } else {
+        return;
+    }
+    W* w = o.w;
+    w.ioff = ioff;
+    w.noff = noff;
+    w.soff = soff;
+    w.aoff = -1;
+    w.esz = 0;
+    w.wr = 0;
+    w.calls = 0;
+    w.nas = 0;
+    w.nmk = 0;
+    w.bad = 0;
+    _scan(o, w, ast.nd(t, f));
+    if w.bad != 0 || w.aoff < 0 {
+        return;
+    }
+    if lboff >= 0 && (lboff != w.aoff || w.esz != 1) {
+        return;
+    }
+    for I64 j = 0; j < w.nas; j++ {
+        I64 off = w.aset[j];
+        if off == ioff || off == w.aoff {
+            return;
+        }
+        if noff >= 0 && off == noff {
+            return;
+        }
+        if soff >= 0 && off == soff {
+            return;
+        }
+    }
+    o.hoist[f] = HOIST_ALL;
+    if w.calls != 0 {
+        o.hoist[f] = HOIST_KEEPGEN;
+    }
+    o.ha[f] = w.aoff;
+    o.hi[f] = ioff;
+    o.hn[f] = noff;
+    o.hnc[f] = bc;
+    o.hs[f] = soff;
+    o.hesz[f] = w.esz;
+    o.hw[f] = w.wr;
+    if lboff >= 0 {
+        o.hlb[f] = 1;
+    }
+    for I64 j = 0; j < w.nmk; j++ {
+        o.skip[w.mks[j]] = f;
+    }
+}
+
+U0 _find(Op* o, I64 n) {
+    if n == 0 {
+        return;
+    }
+    ast.Ast* t = o.t;
+    I64 k = ast.nkind(t, n);
+    if k == ast.ND_BLOCK {
+        for I64 s = ast.na(t, n); s != 0; s = ast.nnext(t, s) {
+            _find(o, s);
+        }
+        return;
+    }
+    if k == ast.ND_IF {
+        _find(o, ast.nb(t, n));
+        _find(o, ast.nc(t, n));
+        return;
+    }
+    if k == ast.ND_FOR {
+        _try(o, n);
+        _find(o, ast.nd(t, n));
+        return;
+    }
+    if k == ast.ND_SWITCH {
+        for I64 cs = ast.nb(t, n); cs != 0; cs = ast.nc(t, cs) {
+            _find(o, ast.na(t, cs));
+        }
+        return;
+    }
+}
+
+U0 _wreset(Op* o) {
+    o.wn = 0;
+}
+
+U0 _wkill(Op* o, I64 roff) {
+    I64 at = 0;
+    for I64 j = 0; j < o.wn; j++ {
+        if o.wroot[j] != roff {
+            o.wroot[at] = o.wroot[j];
+            o.waoff[at] = o.waoff[j];
+            o.wsz[at] = o.wsz[j];
+            o.wwr[at] = o.wwr[j];
+            at = at + 1;
+        }
+    }
+    o.wn = at;
+}
+
+U0 _wadd(Op* o, I64 roff, I64 aoff, I64 sz, I64 wr) {
+    if o.wn >= 64 {
+        return;
+    }
+    o.wroot[o.wn] = roff;
+    o.waoff[o.wn] = aoff;
+    o.wsz[o.wn] = sz;
+    o.wwr[o.wn] = wr;
+    o.wn = o.wn + 1;
+}
+
+U0 _wacc(Op* o, I64 n, I64 roff, I64 aoff, I64 sz, I64 wr, I64 mk) {
+    if mk != 0 {
+        I64 root = 0;
+        I64 full = 0;
+        for I64 j = 0; j < o.wn; j++ {
+            if o.wroot[j] == roff {
+                root = 1;
+                if aoff >= 0 && o.waoff[j] == aoff && o.wsz[j] == sz {
+                    if wr == 0 || o.wwr[j] != 0 {
+                        full = 1;
+                    }
+                }
+            }
+        }
+        if full != 0 {
+            o.skipa[n] = 1;
+        } else if root != 0 {
+            o.skip2[n] = 1;
+        }
+    }
+    _wadd(o, roff, aoff, sz, wr);
+}
+
+I64 _waoffof(Op* o, I64 sub, I64 esz) {
+    if ast.nkind(o.t, sub) == ast.ND_NUM && ast.ng(o.t, sub, ast.N_IVAL) >= 0 {
+        return ast.ng(o.t, sub, ast.N_IVAL) * esz;
+    }
+    return -1;
+}
+
+U0 _wvisit(Op* o, I64 n, I64 mk) {
+    if n == 0 {
+        return;
+    }
+    ast.Ast* t = o.t;
+    I64 k = ast.nkind(t, n);
+    if k == ast.ND_NUM || k == ast.ND_STR || k == ast.ND_NULL || k == ast.ND_SIZEOF
+        || k == ast.ND_VAR || k == ast.ND_GVAR || k == ast.ND_INCDEC
+        || k == ast.ND_BREAK || k == ast.ND_CONT || k == ast.ND_FALLT {
+        return;
+    }
+    if k == ast.ND_NEG || k == ast.ND_AS || k == ast.ND_EXPR || k == ast.ND_RETURN {
+        _wvisit(o, ast.na(t, n), mk);
+        return;
+    }
+    if k == ast.ND_BIN || k == ast.ND_SLICE {
+        _wvisit(o, ast.na(t, n), mk);
+        _wvisit(o, ast.nb(t, n), mk);
+        _wvisit(o, ast.nc(t, n), mk);
+        return;
+    }
+    if k == ast.ND_INDEX {
+        _wvisit(o, ast.na(t, n), mk);
+        _wvisit(o, ast.nb(t, n), mk);
+        if ast.nop(t, n) != ast.IDX_LOCAL && ast.nop(t, n) != ast.IDX_TABLE {
+            I64 b = ast.na(t, n);
+            if ast.nkind(t, b) == ast.ND_VAR {
+                I64 esz = ast.ng(t, n, ast.INDEX_ESZ);
+                _wacc(o, n, ast.ng(t, b, ast.VAR_OFF),
+                      _waoffof(o, ast.nb(t, n), esz), esz, 0, mk);
+            }
+        }
+        return;
+    }
+    if k == ast.ND_FIELD {
+        _wvisit(o, ast.na(t, n), mk);
+        if ast.nop(t, n) == 0 && ast.ng(t, n, ast.FIELD_MODE) == ast.FM_PTR {
+            I64 b = ast.na(t, n);
+            if ast.nkind(t, b) == ast.ND_VAR {
+                _wacc(o, n, ast.ng(t, b, ast.VAR_OFF), ast.ng(t, n, ast.FIELD_OFF),
+                      ast.ng(t, n, ast.FIELD_SIZE), ast.ng(t, n, ast.FIELD_W), mk);
+            }
+        }
+        return;
+    }
+    if k == ast.ND_ASSIGN {
+        I64 l = ast.na(t, n);
+        I64 lk = ast.nkind(t, l);
+        if lk == ast.ND_VAR {
+            _wvisit(o, ast.nb(t, n), mk);
+            _wkill(o, ast.ng(t, l, ast.VAR_OFF));
+            return;
+        }
+        if lk == ast.ND_GVAR {
+            _wvisit(o, ast.nb(t, n), mk);
+            return;
+        }
+        if lk == ast.ND_INDEX {
+            _wvisit(o, ast.na(t, l), mk);
+            _wvisit(o, ast.nb(t, l), mk);
+            if ast.nop(t, l) != ast.IDX_LOCAL && ast.nop(t, l) != ast.IDX_TABLE {
+                I64 b = ast.na(t, l);
+                if ast.nkind(t, b) == ast.ND_VAR {
+                    I64 esz = ast.ng(t, l, ast.INDEX_ESZ);
+                    _wacc(o, l, ast.ng(t, b, ast.VAR_OFF),
+                          _waoffof(o, ast.nb(t, l), esz), esz, 1, mk);
+                }
+            }
+            _wvisit(o, ast.nb(t, n), mk);
+            return;
+        }
+        if lk == ast.ND_FIELD {
+            _wvisit(o, l, mk);
+            _wvisit(o, ast.nb(t, n), mk);
+            return;
+        }
+        _wreset(o);
+        _wvisit(o, ast.nb(t, n), 0);
+        return;
+    }
+    if k == ast.ND_DECL {
+        _wvisit(o, ast.na(t, n), mk);
+        for I64 x = ast.nb(t, n); x != 0; x = ast.nnext(t, x) {
+            _wvisit(o, x, mk);
+        }
+        _wkill(o, ast.ng(t, n, ast.DECL_OFF));
+        return;
+    }
+    if k == ast.ND_CALL {
+        _wvisit(o, ast.na(t, n), mk);
+        for I64 a = ast.nb(t, n); a != 0; a = ast.nnext(t, a) {
+            _wvisit(o, a, mk);
+        }
+        _wreset(o);
+        return;
+    }
+    if k == ast.ND_PRINT {
+        for I64 a = ast.na(t, n); a != 0; a = ast.nnext(t, a) {
+            _wreset(o);
+            _wvisit(o, a, mk);
+        }
+        _wreset(o);
+        return;
+    }
+    if k == ast.ND_IF {
+        _wvisit(o, ast.na(t, n), mk);
+        _wreset(o);
+        _wvisit(o, ast.nb(t, n), mk);
+        _wreset(o);
+        _wvisit(o, ast.nc(t, n), mk);
+        _wreset(o);
+        return;
+    }
+    if k == ast.ND_FOR {
+        _wvisit(o, ast.na(t, n), mk);
+        _wreset(o);
+        _wvisit(o, ast.nb(t, n), mk);
+        _wvisit(o, ast.nd(t, n), mk);
+        _wreset(o);
+        _wvisit(o, ast.nc(t, n), mk);
+        _wreset(o);
+        return;
+    }
+    if k == ast.ND_BLOCK {
+        if ast.nop(t, n) == ast.BLK_UNSAFE {
+            _wreset(o);
+        }
+        for I64 s = ast.na(t, n); s != 0; s = ast.nnext(t, s) {
+            _wvisit(o, s, mk);
+        }
+        _wreset(o);
+        return;
+    }
+    if k == ast.ND_SWITCH {
+        _wvisit(o, ast.na(t, n), mk);
+        for I64 cs = ast.nb(t, n); cs != 0; cs = ast.nc(t, cs) {
+            _wreset(o);
+            _wvisit(o, ast.na(t, cs), mk);
+        }
+        _wreset(o);
+        return;
+    }
+    if k == ast.ND_DEFER {
+        _wreset(o);
+        _wvisit(o, ast.na(t, n), 0);
+        _wreset(o);
+        return;
+    }
+    _wreset(o);
+}
+
+I64 _rcfind(Op* o, I64 off) {
+    for I64 j = 0; j < o.rcn; j++ {
+        if o.rco[j] == off {
+            return j;
+        }
+    }
+    return -1;
+}
+
+U0 _rcadd(Op* o, I64 off) {
+    if _rcfind(o, off) >= 0 || o.rcn >= 64 {
+        return;
+    }
+    o.rco[o.rcn] = off;
+    o.rcc[o.rcn] = 0;
+    o.rcn = o.rcn + 1;
+}
+
+U0 _rcount(Op* o, I64 off, I64 depth) {
+    I64 j = _rcfind(o, off);
+    if j < 0 {
+        return;
+    }
+    I64 w = 1;
+    if depth > 3 {
+        depth = 3;
+    }
+    for I64 k = 0; k < depth; k++ {
+        w = w * 8;
+    }
+    o.rcc[j] = o.rcc[j] + w;
+}
+
+U0 _rkill(Op* o, I64 off) {
+    I64 j = _rcfind(o, off);
+    if j >= 0 {
+        o.rcc[j] = 0 - 1000000000;
+    }
+}
+
+U0 _rvisit(Op* o, I64 n, I64 depth) {
+    if n == 0 || o.rbad != 0 {
+        return;
+    }
+    ast.Ast* t = o.t;
+    I64 k = ast.nkind(t, n);
+    if k == ast.ND_NUM || k == ast.ND_STR || k == ast.ND_NULL || k == ast.ND_SIZEOF
+        || k == ast.ND_GVAR || k == ast.ND_BREAK || k == ast.ND_CONT || k == ast.ND_FALLT {
+        return;
+    }
+    if k == ast.ND_VAR {
+        _rcount(o, ast.ng(t, n, ast.VAR_OFF), depth);
+        return;
+    }
+    if k == ast.ND_INCDEC {
+        _rcount(o, ast.ng(t, n, ast.INC_OFF), depth);
+        return;
+    }
+    if k == ast.ND_ADDR {
+        if ast.nop(t, n) != ast.AOF_TABLE && ast.nop(t, n) != ast.AOF_FN {
+            _rkill(o, ast.ng(t, n, ast.ADDR_OFF));
+        }
+        return;
+    }
+    if k == ast.ND_NEG || k == ast.ND_AS || k == ast.ND_EXPR || k == ast.ND_RETURN
+        || k == ast.ND_FIELD || k == ast.ND_DEFER {
+        _rvisit(o, ast.na(t, n), depth);
+        return;
+    }
+    if k == ast.ND_BIN || k == ast.ND_INDEX || k == ast.ND_SLICE {
+        _rvisit(o, ast.na(t, n), depth);
+        _rvisit(o, ast.nb(t, n), depth);
+        _rvisit(o, ast.nc(t, n), depth);
+        return;
+    }
+    if k == ast.ND_ASSIGN {
+        _rvisit(o, ast.na(t, n), depth);
+        _rvisit(o, ast.nb(t, n), depth);
+        return;
+    }
+    if k == ast.ND_DECL {
+        if ast.ng(t, n, ast.N_DALEN) < 0 && ast.ng(t, n, ast.N_DKIND) == ast.SK_I64
+            && ast.ng(t, n, ast.DECL_CLS) == 1 {
+            _rcadd(o, ast.ng(t, n, ast.DECL_OFF));
+        }
+        _rvisit(o, ast.na(t, n), depth);
+        for I64 x = ast.nb(t, n); x != 0; x = ast.nnext(t, x) {
+            _rvisit(o, x, depth);
+        }
+        return;
+    }
+    if k == ast.ND_CALL {
+        _rvisit(o, ast.na(t, n), depth);
+        for I64 a = ast.nb(t, n); a != 0; a = ast.nnext(t, a) {
+            _rvisit(o, a, depth);
+        }
+        return;
+    }
+    if k == ast.ND_PRINT {
+        for I64 a = ast.na(t, n); a != 0; a = ast.nnext(t, a) {
+            _rvisit(o, a, depth);
+        }
+        return;
+    }
+    if k == ast.ND_IF {
+        _rvisit(o, ast.na(t, n), depth);
+        _rvisit(o, ast.nb(t, n), depth);
+        _rvisit(o, ast.nc(t, n), depth);
+        return;
+    }
+    if k == ast.ND_FOR {
+        _rvisit(o, ast.na(t, n), depth);
+        _rvisit(o, ast.nb(t, n), depth + 1);
+        _rvisit(o, ast.nc(t, n), depth + 1);
+        _rvisit(o, ast.nd(t, n), depth + 1);
+        return;
+    }
+    if k == ast.ND_BLOCK {
+        for I64 s = ast.na(t, n); s != 0; s = ast.nnext(t, s) {
+            _rvisit(o, s, depth);
+        }
+        return;
+    }
+    if k == ast.ND_SWITCH {
+        _rvisit(o, ast.na(t, n), depth);
+        for I64 cs = ast.nb(t, n); cs != 0; cs = ast.nc(t, cs) {
+            _rvisit(o, ast.na(t, cs), depth);
+        }
+        return;
+    }
+    o.rbad = 1;
+}
+
+U0 _regsel(Op* o, I64 f) {
+    ast.Ast* t = o.t;
+    o.rcn = 0;
+    o.rbad = 0;
+    for I64 p = ast.nb(t, f); p != 0; p = ast.nnext(t, p) {
+        I64 pt = check.resolve_dty(o.c, p);
+        if check.tp_isptr(pt) == false && check.tp_cls(pt) == ast.CLS_SCALAR
+            && check.tp_kind(pt) == ast.SK_I64 {
+            _rcadd(o, ast.ng(t, p, ast.PARAM_OFF));
+        }
+    }
+    _rvisit(o, ast.na(t, f), 0);
+    if o.rbad != 0 {
+        return;
+    }
+    I64 b1 = -1;
+    I64 b2 = -1;
+    for I64 j = 0; j < o.rcn; j++ {
+        if o.rcc[j] < 8 {
+            continue;
+        }
+        if b1 < 0 || o.rcc[j] > o.rcc[b1] {
+            b2 = b1;
+            b1 = j;
+        } else if b2 < 0 || o.rcc[j] > o.rcc[b2] {
+            b2 = j;
+        }
+    }
+    if b1 >= 0 {
+        o.rlo1[f] = o.rco[b1];
+    }
+    if b2 >= 0 {
+        o.rlo2[f] = o.rco[b2];
+    }
+}
+
+U0 op_run(Op* o) {
+    ast.Ast* t = o.t;
+    for I64 id = 1; id < t.n; id++ {
+        if ast.nkind(t, id) == ast.ND_ADDR {
+            I64 aop = ast.nop(t, id);
+            if aop != 3 && aop != 4 {
+                o.poison[ast.node_pkg(t, id)] = 1;
+            }
+        }
+    }
+    for I64 d = t.top; d != 0; d = ast.nnext(t, d) {
+        if ast.nkind(t, d) == ast.ND_FN {
+            if o.c.only < 0 || ast.node_pkg(t, d) == o.c.only {
+                if o.poison[ast.node_pkg(t, d)] == 0 {
+                    _find(o, ast.na(t, d));
+                    _wreset(o);
+                    _wvisit(o, ast.na(t, d), 1);
+                }
+                _regsel(o, d);
+            }
+        }
+    }
+}

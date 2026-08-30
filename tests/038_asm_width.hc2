@@ -1,0 +1,7 @@
+I32 main() {
+    I32 a = 1;
+    asm {
+        MOV RAX, a
+    }
+    return 0;
+}

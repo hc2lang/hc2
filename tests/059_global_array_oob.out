@@ -1,0 +1,2 @@
+before
+tests/059_global_array_oob.hc2:6: trap: out of bounds

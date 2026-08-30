@@ -1,0 +1,2 @@
+before
+tests/042_variadic_overread.hc2:3: trap: out of bounds

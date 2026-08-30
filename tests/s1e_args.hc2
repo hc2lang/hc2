@@ -1,0 +1,7 @@
+I32 f(I32 a, I32 b) {
+    return a + b;
+}
+
+I32 main() {
+    return f(1);
+}

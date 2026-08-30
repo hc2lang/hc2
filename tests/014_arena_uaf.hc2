@@ -1,0 +1,30 @@
+import "heap";
+
+struct Arena {
+    U8* buf;
+    I64 used;
+}
+
+Arena arena_new(I64 size) {
+    Arena a = {heap.alloc(size), 0};
+    return a;
+}
+
+U8* arena_alloc(Arena* a, I64 n) {
+    U8* p = a.buf[a.used : a.used + n];
+    a.used = a.used + n;
+    return p;
+}
+
+U0 arena_free(Arena* a) {
+    heap.free(a.buf);
+}
+
+I32 main() {
+    Arena ar = arena_new(4096);
+    U8* line = arena_alloc(&ar, 128);
+    arena_free(&ar);
+    U8 c = line[0];
+    "%c\n", c;
+    return 0;
+}

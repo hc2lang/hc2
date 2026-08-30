@@ -1,0 +1,5 @@
+say: hello
+300 as U8 = 44
+v as U32 = 4294967291
+note 2
+note 1

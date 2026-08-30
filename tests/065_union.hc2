@@ -1,0 +1,37 @@
+// the CDate pattern: one I64, or its two halves, in the same eight bytes
+import "heap";
+
+struct TimeDate {
+    U32 time;
+    I32 date;
+}
+
+union Date {
+    I64 i64;
+    TimeDate td;
+}
+
+union Word {
+    I64 i;
+    U8 b;
+}
+
+I32 main() {
+    Date d = {};
+    "zero %d\n", d.i64;
+    d.i64 = 0x11223344AABBCCDD;
+    "time %x date %x\n", d.td.time as I64, d.td.date as I64;
+    d.td.date = 0x55667788;
+    "whole %x\n", d.i64;
+    "size %d\n", sizeof(Date);
+    Word w = {};
+    w.i = 0x4142;
+    "low byte %c\n", w.b as I64;
+    Word* p = &w;
+    p.i = 0x43;
+    "via ptr %c\n", w.b as I64;
+    Word* h = heap.alloc(sizeof(Word)) as Word*;
+    h.i = 0x5A;
+    "heap %c\n", h.b as I64;
+    return 0;
+}

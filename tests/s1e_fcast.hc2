@@ -1,0 +1,5 @@
+I32 main() {
+    U64 u = 1;
+    F64 x = u as F64;
+    return 0;
+}

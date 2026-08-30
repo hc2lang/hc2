@@ -1,0 +1,6 @@
+I32 main() {
+    U8* s = null;
+    "before\n";
+    "%s\n", s;
+    return 0;
+}

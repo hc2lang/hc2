@@ -1,0 +1,8 @@
+I32 main() {
+    I32 d[4] = {1, 2, 3, 4};
+    I32 i = 5;
+    "before\n";
+    I32 e = d[i];
+    "after %d\n", e;
+    return 0;
+}

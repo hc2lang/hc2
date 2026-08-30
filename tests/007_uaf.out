@@ -1,0 +1,1 @@
+tests/007_uaf.hc2:7: trap: use after free

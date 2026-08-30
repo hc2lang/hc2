@@ -1,0 +1,5 @@
+U8* p = "x";
+
+I64 main() {
+    return 0;
+}

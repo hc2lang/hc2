@@ -1,0 +1,25 @@
+import "hc2/asm";
+
+// The arm64 assembler mode against GNU as: local-label branches resolve to
+// the same bytes, and named/adrp/:lo12: references leave the same
+// zero-field words behind, so the whole text section is comparable. The
+// relocation records are printed as well — the linker's side of the story.
+
+I32 main() {
+    U8* src = ".text\ntstart:\n  movz x0, #7\n  movz x1, #0\n.Lloop:\n  add x1, x1, #1\n  cmp x1, x0\n  b.lt .Lloop\n  cbz x1, .Ldone\n  sub x2, x1, #1\n  b .Lend\n.Ldone:\n  movz x2, #0\n.Lend:\n  stp x29, x30, [sp, #-16]!\n  mov x29, x1\n  ldr x3, [x29, #16]\n  str x3, [sp, #8]\n  ldrb w4, [x1, #1]\n  strb w4, [x1, #2]\n  ldur x5, [x29, #-24]\n  ldp x29, x30, [sp], #16\n  and x6, x7, #0xff\n  orr x6, x7, x8\n  lsl x6, x7, x8\n  mul x6, x7, x8\n  sdiv x6, x7, x8\n  cset x9, eq\n  csel x9, x1, x2, lt\n  neg x9, x1\n  svc #0x80\n  bl .Lhelper\n  bl ext_fn\n  adrp x10, tval\n  add x10, x10, :lo12:tval\n  ldr x11, [x10]\n.Lhelper:\n  ret\n.data\ntval:\n  .quad 42\n";
+    asm.As* s = asm.as_new();
+    s.isa = 2;
+    asm.assemble_file(s, src);
+    "text %d\n", s.tlen;
+    for I64 i = 0; i < s.tlen; i = i + 4 {
+        I64 word = (s.text[i] as I64) | ((s.text[i + 1] as I64) << 8)
+            | ((s.text[i + 2] as I64) << 16) | ((s.text[i + 3] as I64) << 24);
+        "%x\n", word;
+    }
+    "relocs %d\n", s.nrel;
+    for I64 i = 0; i < s.nrel; i++ {
+        "rel %d %d %d %d\n", s.rwide[i], s.rwhere[i], s.rel[i], s.rsec[i];
+    }
+    "data %d\n", s.dlen;
+    return 0;
+}

@@ -1,0 +1,126 @@
+import "hc2/isa/a64";
+import "heap";
+
+// Every encoder against ground truth taken from GNU as on arm64 (the .out
+// words are objdump's). The mov synthesis is additionally checked
+// semantically: decoding its own words must rebuild the value.
+
+U0 w(I64 x) {
+    "%x\n", x;
+}
+
+I64 seqval(I64* ws, I64 n) {
+    I64 v = 0;
+    for I64 i = 0; i < n; i++ {
+        I64 word = ws[i];
+        I64 hw = (word >> 21) & 3;
+        I64 imm = (word >> 5) & 0xffff;
+        I64 top = (word >> 23) & 0x1ff;
+        if top == 0x1A5 {              // movz
+            v = imm << (hw * 16);
+        } else if top == 0x125 {       // movn
+            v = (0 - 1) ^ (imm << (hw * 16));
+        } else if top == 0x1E5 {       // movk
+            I64 keep = (0 - 1) ^ (0xffff << (hw * 16));
+            v = (v & keep) | (imm << (hw * 16));
+        } else {
+            return 0 - 12345;          // orr from zr: checked by the encoders
+        }
+    }
+    return v;
+}
+
+U0 chkseq(I64 v) {
+    I64* ws = heap.alloc(4 * sizeof(I64)) as I64*;
+    I64 n = a64.movseq(ws, 5, v);
+    I64 got = seqval(ws, n);
+    if got == v {
+        "seq %d ok\n", n;
+    } else {
+        "seq BAD want %x got %x\n", v, got;
+    }
+}
+
+I32 main() {
+    w(a64.addi(0, 1, 42, 0));
+    w(a64.addi(3, 4, 4095, 0));
+    w(a64.addi(0, 1, 1, 1));
+    w(a64.subi(a64.SP, a64.SP, 16, 0));
+    w(a64.cmpi(2, 7));
+    w(a64.addsi(1, 2, 0, 0));
+    w(a64.movz(5, 0x1234, 0));
+    w(a64.movz(5, 0x1234, 1));
+    w(a64.movk(5, 0xbeef, 2));
+    w(a64.movn(9, 0, 0));
+    w(a64.andi(2, 3, a64.bitmask(0xff)));
+    w(a64.orri(2, 3, a64.bitmask(0xff00ff00ff00ff00)));
+    w(a64.eori(2, 3, a64.bitmask(0x5555555555555555)));
+    w(a64.tsti(3, a64.bitmask(1)));
+    w(a64.addr(0, 1, 2));
+    w(a64.subr(0, 1, 2));
+    w(a64.cmpr(1, 2));
+    w(a64.andr(0, 1, 2));
+    w(a64.orrr(0, 1, 2));
+    w(a64.movr(0, 1));
+    w(a64.eorr(0, 1, 2));
+    w(a64.tstr(1, 2));
+    w(a64.lslv(0, 1, 2));
+    w(a64.lsrv(0, 1, 2));
+    w(a64.asrv(0, 1, 2));
+    w(a64.mul(0, 1, 2));
+    w(a64.msub(0, 1, 2, 3));
+    w(a64.sdiv(0, 1, 2));
+    w(a64.udiv(0, 1, 2));
+    w(a64.ldrx(0, 29, 16));
+    w(a64.strx(0, a64.SP, 8));
+    w(a64.ldrw(0, 1, 4));
+    w(a64.ldrsw(0, 1, 4));
+    w(a64.ldrh(0, 1, 2));
+    w(a64.ldrsh(0, 1, 2));
+    w(a64.ldrb(0, 1, 1));
+    w(a64.ldrsb(0, 1, 1));
+    w(a64.strb(0, 1, 1));
+    w(a64.strh(0, 1, 2));
+    w(a64.strw(0, 1, 4));
+    w(a64.ldur(0, 29, 0 - 24));
+    w(a64.stur(0, 29, 0 - 24));
+    w(a64.ldrx_post(0, a64.SP, 16));
+    w(a64.strx_pre(0, a64.SP, 0 - 16));
+    w(a64.stp_pre(29, 30, a64.SP, 0 - 16));
+    w(a64.ldp_post(29, 30, a64.SP, 16));
+    w(a64.stp(1, 2, a64.SP, 16));
+    w(a64.ldp(1, 2, a64.SP, 32));
+    w(a64.b(0));
+    w(a64.bl(0));
+    w(a64.bcond(a64.EQ, 0));
+    w(a64.bcond(a64.LT, 0));
+    w(a64.cbz(3, 0));
+    w(a64.cbnz(3, 0));
+    w(a64.br(5));
+    w(a64.blr(5));
+    w(a64.ret());
+    w(a64.cset(0, a64.EQ));
+    w(a64.csel(0, 1, 2, a64.LT));
+    w(a64.adrp(0, 0));
+    w(a64.svc(0x80));
+    w(a64.svc(0));
+    w(a64.b(0 - 8));
+    w(a64.bcond(a64.NE, 0 - 4));
+    w(a64.cbz(3, 12));
+    chkseq(0);
+    chkseq(0 - 1);
+    chkseq(0x1234);
+    chkseq(0x12340000);
+    chkseq(0x123456789abcdef0);
+    chkseq(0 - 2);
+    chkseq(0xffffffffffff1234);
+    chkseq(0x1234ffffffffffff);
+    "%d\n", a64.bitmask(0);
+    "%d\n", a64.bitmask(0 - 1);
+    "%x\n", a64.bitmask(0xff);
+    "%x\n", a64.bitmask(0x5555555555555555);
+    "%x\n", a64.bitmask(0xff00ff00ff00ff00);
+    "%x\n", a64.bitmask(0x7ffffffffffffffe);
+    "%d\n", a64.bitmask(0x1234);
+    return 0;
+}

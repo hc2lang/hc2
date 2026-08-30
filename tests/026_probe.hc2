@@ -1,0 +1,34 @@
+// stage1 probe: a valid program exercising the core of the language
+import "heap";
+
+struct Pt {
+    I64 x;
+    U8* name;
+}
+
+I32 fib(I32 n) {
+    if n < 2 {
+        return n;
+    }
+    return fib(n - 1) + fib(n - 2);
+}
+
+Pt make(I64 x) {
+    Pt p = {x, "pt"};
+    return p;
+}
+
+I32 main() {
+    I32 d[3] = {1, 2, 3};
+    U8* s = "hi";
+    Pt* q = heap.alloc(sizeof(Pt)) as Pt*;
+    defer heap.free(q as U8*);
+    q.x = 7;
+    q.name = s;
+    Pt r = make(9);
+    for I32 i = 0; i < 3; i++ {
+        "%d %s\n", d[i] * 2, s[0 : 1];
+    }
+    "%d %d %s %d\n", q.x, r.x, r.name, fib(10);
+    return 0;
+}

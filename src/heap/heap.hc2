@@ -1,0 +1,75 @@
+import "rt";
+import "sys";
+
+I64 _cur = 0;
+I64 _end = 0;
+
+const I64 _HEAP = 256 * 1024 * 1024;
+
+I64 _base() {
+    return sys.mmap(_HEAP);
+}
+
+I64 _size() {
+    return _HEAP;
+}
+
+U0 _t(I64 kind) {
+    U8* m = "heap: trap: ";
+    rt.hc2_trap(m.addr, m.len, kind);
+}
+
+U0 _init() {
+    if _cur == 0 {
+        I64 b = _base();
+        if b <= 0 {
+            _t(rt.TK_OOM);
+        }
+        _cur = b;
+        _end = b + _size();
+    }
+}
+
+U8* alloc(I64 n) {
+    _init();
+    if n < 0 {
+        _t(rt.TK_OOM);
+    }
+    I64 need = (n + 15) / 16 * 16 + 32;
+    if _cur + need > _end {
+        _t(rt.TK_OOM);
+    }
+    I64 base = _cur;
+    _cur = _cur + need;
+    return sys.from_raw(base + 32, n);
+}
+
+I64 mark() {
+    _init();
+    return _cur;
+}
+
+U0 release(I64 m) {
+    _init();
+    if m < _end - _size() || m > _cur {
+        _t(rt.TK_NOTBASE);
+    }
+    _cur = m;
+}
+
+U0 free(U8* p) {
+    if p.gen == 0 {
+        _t(rt.TK_IMMORTAL);
+    }
+    if p.lo != 0 {
+        _t(rt.TK_NOTBASE);
+    }
+    if p.addr != p.hdr + 16 {
+        _t(rt.TK_NOTBASE);
+    }
+    I64* h = sys.from_raw(p.hdr, 16) as I64*;
+    if h[1] != p.gen {
+        _t(rt.TK_DFREE);
+    }
+    h[1] = h[1] + 1;
+}

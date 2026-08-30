@@ -1,0 +1,85 @@
+
+import "sys";
+
+const I64 SYS_WRITE = 1;
+const I64 SYS_EXIT = 60;
+const I64 STDOUT = 1;
+const I64 STDERR = 2;
+
+I64 _sys1(I64 num, I64 a1) {
+    I64 r = 0;
+    asm {
+        MOV RAX, num
+        MOV RDI, a1
+        SYSCALL
+        MOV r, RAX
+    }
+    return r;
+}
+
+I64 _sys3(I64 num, I64 a1, I64 a2, I64 a3) {
+    I64 r = 0;
+    asm {
+        MOV RAX, num
+        MOV RDI, a1
+        MOV RSI, a2
+        MOV RDX, a3
+        SYSCALL
+        MOV r, RAX
+    }
+    return r;
+}
+
+U0 _write(I64 fd, U8* s) {
+    _sys3(SYS_WRITE, fd, s.addr, s.len);
+}
+
+U0 _emit(U8* s) {
+    _write(1, s);
+}
+
+U0 _emit_raw(I64 addr, I64 len) {
+    _sys3(SYS_WRITE, STDOUT, addr, len);
+}
+
+U0 _fail(U8* s) {
+    _write(2, s);
+}
+
+U0 _fail_raw(I64 addr, I64 len) {
+    _sys3(SYS_WRITE, STDERR, addr, len);
+}
+
+U0 _stop(I64 code) {
+    _sys1(SYS_EXIT, code);
+}
+
+U0 hc2_exit() {
+    asm {
+        MOV RAX, 60
+        SYSCALL
+    }
+}
+
+U8* _stack_area() {
+    I64* av = sys.from_raw(hc2_argv, (hc2_argc + 2) * 8) as I64*;
+    I64 hi = av[hc2_argc + 1];
+    if hi == 0 {
+        hi = (av[hc2_argc - 1] + 4096) / 4096 * 4096;
+    }
+    return sys.from_raw(hc2_argv, hi - hc2_argv);
+}
+
+U8* arg(I64 i) {
+    if i < 0 || i >= hc2_argc {
+        _trap("rt: trap: ", 0);
+    }
+    U8* area = _stack_area();
+    I64* av = area as I64*;
+    I64 off = av[i] - hc2_argv;
+    I64 n = 0;
+    for area[off + n] != 0 {
+        n = n + 1;
+    }
+    return area[off : off + n];
+}

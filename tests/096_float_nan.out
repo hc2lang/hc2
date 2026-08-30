@@ -1,0 +1,14 @@
+inf
+-inf
+nan
+0.000000
+-0.000000
+neq
+ne
+ordered-false
+lt-ok
+gt-ok
+le-ok
+ge-false-ok
+1.000000e+20
+0.000000

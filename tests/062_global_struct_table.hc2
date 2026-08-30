@@ -1,0 +1,21 @@
+// struct elements in a mutable table — and padding: tag sits at offset 0,
+// v at offset 8, so the emitter must fill the gap in both .data and .rodata
+struct Pt {
+    U8 tag;
+    I64 v;
+}
+
+Pt pts[3] = {{1, 100}, {2, 200}, {3, 300}};
+Pt zs[2] = {};
+const Pt CP[2] = {{7, 70}, {8, 80}};
+
+I32 main() {
+    "%d %d\n", pts[0].tag as I64, pts[2].v;
+    pts[1].v = pts[1].v + 5;
+    pts[0].tag = 9;
+    "%d %d\n", pts[0].tag as I64, pts[1].v;
+    zs[1].v = 42;
+    "%d %d\n", zs[0].v, zs[1].v;
+    "%d %d\n", CP[1].tag as I64, CP[0].v;
+    return 0;
+}

@@ -1,0 +1,10 @@
+import "heap";
+
+I32 main() {
+    I32* a = heap.alloc(4 * sizeof(I32)) as I32*;
+    I32* b = a;
+    heap.free(a as U8*);
+    I32 x = b[0];
+    "unreachable %d\n", x;
+    return 0;
+}

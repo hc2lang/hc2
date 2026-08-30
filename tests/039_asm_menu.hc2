@@ -1,0 +1,6 @@
+I32 main() {
+    asm {
+        VZEROUPPER
+    }
+    return 0;
+}

@@ -1,0 +1,14 @@
+I32 main() {
+    I64 a = 0xff;
+    "and %d\n", a & 0x0f;
+    "or %x\n", 0xf0 | 0x0f;
+    "xor %d\n", 6 ^ 3;
+    "shl %d\n", 1 << 10;
+    I64 m = -8;
+    "sar %d\n", m >> 1;
+    U64 u = 16;
+    "shr %d\n", u >> 2;
+    "prec %d\n", 1 + 2 << 3;
+    "chr %c\n", 'A';
+    return 0;
+}

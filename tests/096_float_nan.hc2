@@ -1,0 +1,18 @@
+I32 main() {
+    "%f\n", 1.0 / 0.0;
+    "%f\n", 0.0 - 1.0 / 0.0;
+    "%f\n", 0.0 / 0.0;
+    "%f\n", 0.0;
+    "%f\n", -0.0;
+    F64 nan = 0.0 / 0.0;
+    if nan == nan { "eq\n"; } else { "neq\n"; }
+    if nan != nan { "ne\n"; }
+    if nan < 1.0 { "lt\n"; } else { "ordered-false\n"; }
+    if 1.5 < 2.5 { "lt-ok\n"; }
+    if 2.5 > 1.5 { "gt-ok\n"; }
+    if 1.5 <= 1.5 { "le-ok\n"; }
+    if 1.5 >= 2.5 { "ge-bad\n"; } else { "ge-false-ok\n"; }
+    "%f\n", 1.0e20;
+    "%f\n", 1.0e-300;
+    return 0;
+}

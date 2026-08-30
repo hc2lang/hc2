@@ -1,0 +1,43 @@
+// An allocator written in hc2. The only privileged line is the from_raw;
+// even revocation is a library call. Blocks reserve a scratch slot below
+// the header, the same layout the real heap uses, so free can open it.
+import "heap";
+import "sys";
+
+struct Heap {
+    I64 cur;
+    I64 end;
+}
+
+Heap heap_new(I64 size) {
+    I64 base = sys.mmap(size);
+    Heap h = {base, base + size};
+    return h;
+}
+
+U8* alloc(Heap* h, I64 n) {
+    I64 need = (n + 15) / 16 * 16 + 32;
+    if h.cur + need > h.end {
+        "out of memory\n";
+        return sys.from_raw(h.cur + 32, 0);
+    }
+    I64 base = h.cur;
+    h.cur = h.cur + need;
+    return sys.from_raw(base + 32, n);
+}
+
+I32 main() {
+    Heap h = heap_new(1 << 20);
+    U8* a = alloc(&h, 8);
+    a[0] = 72;
+    a[1] = 105;
+    "wrote %s\n", a[0 : 2];
+    "len %d\n", a.len;
+    a[7] = 33;
+    "last byte ok\n";
+    heap.free(a);
+    "revoked\n";
+    a[0] = 65;
+    "unreachable\n";
+    return 0;
+}

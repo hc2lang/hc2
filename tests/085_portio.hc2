@@ -1,0 +1,38 @@
+// in and out, checked against the manual: the port is in dx, the data in the
+// accumulator, and only the width changes the byte.
+import "hc2/asm";
+import "heap";
+
+U8* line(U8* a, U8* b) {
+    U8* r = heap.alloc(a.len + b.len + 1);
+    for I64 i = 0; i < a.len; i++ {
+        r[i] = a[i];
+    }
+    for I64 i = 0; i < b.len; i++ {
+        r[a.len + i] = b[i];
+    }
+    r[a.len + b.len] = '\n';
+    return r[0 : a.len + b.len + 1];
+}
+
+I32 main() {
+    U8* s = line("", ".text");
+    s = line(s, "  in al, dx");
+    s = line(s, "  in ax, dx");
+    s = line(s, "  in eax, dx");
+    s = line(s, "  out dx, al");
+    s = line(s, "  out dx, ax");
+    s = line(s, "  out dx, eax");
+    asm.As* a = asm.as_new();
+    asm.assemble_file(a, s);
+    U8* d = "0123456789abcdef";
+    for I64 i = 0; i < a.tlen; i++ {
+        I64 v = a.text[i] as I64;
+        if i != 0 {
+            " ";
+        }
+        "%c%c", d[(v >> 4) & 15] as I64, d[v & 15] as I64;
+    }
+    "\n";
+    return 0;
+}

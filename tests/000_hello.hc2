@@ -1,0 +1,4 @@
+I32 main() {
+    "Hello, world!\n";
+    return 0;
+}

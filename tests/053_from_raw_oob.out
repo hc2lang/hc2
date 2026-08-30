@@ -1,0 +1,2 @@
+in bounds ok
+tests/053_from_raw_oob/main.hc2:9: trap: out of bounds

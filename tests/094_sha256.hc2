@@ -1,0 +1,30 @@
+import "hash";
+import "heap";
+
+// SHA-256 against the canonical vectors.
+U0 show(U8* buf, I64 len) {
+    U8* out = heap.alloc(32);
+    hash.sha256(buf, len, out);
+    U8* hex = "0123456789abcdef";
+    for I64 i = 0; i < 32; i++ {
+        I64 v = out[i] as I64;
+        "%c%c", hex[(v >> 4) & 15], hex[v & 15];
+    }
+    "\n";
+}
+
+I32 main() {
+    U8* empty = heap.alloc(1);
+    show(empty[0:0], 0);                 // e3b0c442...
+    U8* abc = "abc";
+    U8* b = heap.alloc(3);
+    b[0] = 'a'; b[1] = 'b'; b[2] = 'c';
+    show(b, 3);                          // ba7816bf...
+    U8* msg = "The quick brown fox jumps over the lazy dog";
+    U8* m = heap.alloc(msg.len);
+    for I64 i = 0; i < msg.len; i++ {
+        m[i] = msg[i];
+    }
+    show(m, msg.len);                    // d7a8fbb3...
+    return 0;
+}

@@ -1,0 +1,2 @@
+before
+tests/029_rowcross.hc2:5: trap: out of bounds

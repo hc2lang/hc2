@@ -1,0 +1,44 @@
+// function pointers: mint with &, call through values, tables, callbacks
+I32 add(I32 a, I32 b) { return a + b; }
+I32 mul(I32 a, I32 b) { return a * b; }
+U0 show(I64 x) { "x %d\n", x; }
+
+struct OpEnt {
+    U8* name;
+    I32(I32, I32)* f;
+}
+
+const OpEnt OPS[2] = {
+    {"add", &add},
+    {"mul", &mul},
+};
+
+U0 each(I64* xs, U0(I64)* f) {
+    for I64 i = 0; i < xs.len / 8; i++ {
+        f(xs[i]);
+    }
+}
+
+I32 main() {
+    I32(I32, I32)* f = &add;
+    "direct %d\n", f(2, 3);
+    f = &mul;
+    "swapped %d\n", f(2, 3);
+    for I64 i = 0; i < 2; i++ {
+        "%s %d\n", OPS[i].name, OPS[i].f(4, 5);
+    }
+    I64 a[3] = {7, 8, 9};
+    each(&a, &show);
+    U0(I64)* g = null;
+    if g == null {
+        "g is null\n";
+    }
+    g = &show;
+    if g != null {
+        g(42);
+    }
+    if f.addr > 0 {
+        "addr ok\n";
+    }
+    return 0;
+}

@@ -1,0 +1,6 @@
+I32 main() {
+    asm {
+        RET
+    }
+    return 0;
+}

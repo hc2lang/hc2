@@ -1,0 +1,9 @@
+I64 buf[4] = {};
+
+I32 main() {
+    I64 i = 9;
+    "before\n";
+    buf[i] = 1;
+    "after\n";
+    return 0;
+}

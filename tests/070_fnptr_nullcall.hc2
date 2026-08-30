@@ -1,0 +1,12 @@
+import "heap";
+
+struct Srv {
+    U0(I64)* cb;
+}
+
+I32 main() {
+    Srv* z = heap.alloc(sizeof(Srv)) as Srv*;
+    "before\n";
+    z.cb(1);
+    return 0;
+}

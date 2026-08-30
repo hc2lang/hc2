@@ -1,0 +1,183 @@
+
+U8* from_raw(I64 addr, I64 len) {
+    unsafe {
+        I64 h = addr - 16;
+        I64 h8 = addr - 8;
+        I64 one = 1;
+        asm {
+            LDR X9, h
+            LDR X10, len
+            STR X10, [X9]
+            LDR X9, h8
+            LDR X10, one
+            STR X10, [X9]
+        }
+        _Cap c = {};
+        c.w.addr = addr;
+        c.w.hdr = h | 1;
+        c.w.offlen = len << 32;
+        c.w.gen = 1;
+        return c.p;
+    }
+}
+
+I64 _sys1(I64 num, I64 a1) {
+    I64 r = 0;
+    asm {
+        LDR X16, num
+        LDR X0, a1
+        SVC 0x80
+        MOVZ X1, 0
+        ADC X1, X1
+        MOVZ X2, 0
+        SUB X2, X1
+        EOR X0, X2
+        SUB X0, X2
+        STR X0, r
+    }
+    return r;
+}
+
+I64 _sys3(I64 num, I64 a1, I64 a2, I64 a3) {
+    I64 r = 0;
+    asm {
+        LDR X16, num
+        LDR X0, a1
+        LDR X1, a2
+        LDR X2, a3
+        SVC 0x80
+        MOVZ X1, 0
+        ADC X1, X1
+        MOVZ X2, 0
+        SUB X2, X1
+        EOR X0, X2
+        SUB X0, X2
+        STR X0, r
+    }
+    return r;
+}
+
+I64 _sys6(I64 num, I64 a1, I64 a2, I64 a3, I64 a4, I64 a5, I64 a6) {
+    I64 r = 0;
+    asm {
+        LDR X16, num
+        LDR X0, a1
+        LDR X1, a2
+        LDR X2, a3
+        LDR X3, a4
+        LDR X4, a5
+        LDR X5, a6
+        SVC 0x80
+        MOVZ X1, 0
+        ADC X1, X1
+        MOVZ X2, 0
+        SUB X2, X1
+        EOR X0, X2
+        SUB X0, X2
+        STR X0, r
+    }
+    return r;
+}
+
+const I64 SYS_EXIT = 0x2000001;
+const I64 SYS_READ = 0x2000003;
+const I64 SYS_WRITE = 0x2000004;
+const I64 SYS_OPEN = 0x2000005;
+const I64 SYS_CLOSE = 0x2000006;
+const I64 SYS_UNLINK = 0x200000A;
+const I64 SYS_CHMOD = 0x200000F;
+const I64 SYS_MPROTECT = 0x200004A;
+const I64 SYS_MKDIR = 0x2000088;
+const I64 SYS_RMDIR = 0x2000089;
+const I64 SYS_MMAP = 0x20000C5;
+const I64 SYS_FSTAT64 = 0x2000153;
+const I64 SYS_GETDIRENTRIES64 = 0x2000158;
+
+const I64 PROT_READ = 1;
+const I64 PROT_WRITE = 2;
+const I64 MAP_PRIVATE = 2;
+const I64 MAP_ANON = 4096;
+const I64 O_RDONLY = 0;
+const I64 O_WRONLY = 1;
+const I64 O_CREAT = 512;
+const I64 O_TRUNC = 1024;
+const I64 MODE_644 = 420;
+const I64 MODE_755 = 493;
+const I64 STAT_SIZE_AT = 96;
+const I64 DENT_NAME_AT = 21;
+
+const U8* OS = "macos";
+const U8* ARCH = "arm64";
+
+I64 mmap(I64 len) {
+    return _sys6(SYS_MMAP, 0, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+}
+
+I64 mprotect(I64 addr, I64 len, I64 prot) {
+    return _sys3(SYS_MPROTECT, addr, len, prot);
+}
+
+I64 open(U8* path) {
+    return _sys3(SYS_OPEN, path.addr, O_RDONLY, 0);
+}
+
+I64 create(U8* path) {
+    return _sys3(SYS_OPEN, path.addr, O_WRONLY | O_CREAT | O_TRUNC, MODE_644);
+}
+
+I64 close(I64 fd) {
+    return _sys1(SYS_CLOSE, fd);
+}
+
+I64 read(I64 fd, U8* buf) {
+    return _sys3(SYS_READ, fd, buf.addr, buf.len);
+}
+
+I64 write(I64 fd, U8* buf) {
+    return _sys3(SYS_WRITE, fd, buf.addr, buf.len);
+}
+
+I64 getdents(I64 fd, U8* buf) {
+    I64 pos[1] = {};
+    I64* pp = &pos;
+    return _sys6(SYS_GETDIRENTRIES64, fd, buf.addr, buf.len, pp.addr, 0, 0);
+}
+
+I64 dent_nameoff() {
+    return DENT_NAME_AT;
+}
+
+I64 fsize(I64 fd) {
+    U8 st[256] = {};
+    U8* p = &st;
+    _sys3(SYS_FSTAT64, fd, p.addr, 0);
+    I64 v = 0;
+    for I64 i = 7; i >= 0; i = i - 1 {
+        v = v * 256 + (p[STAT_SIZE_AT + i] as I64);
+    }
+    return v;
+}
+
+I64 mkdir(U8* path) {
+    return _sys3(SYS_MKDIR, path.addr, MODE_755, 0);
+}
+
+I64 chmod(U8* path, I64 mode) {
+    return _sys3(SYS_CHMOD, path.addr, mode, 0);
+}
+
+I64 unlink(U8* path) {
+    return _sys1(SYS_UNLINK, path.addr);
+}
+
+I64 rmdir(U8* path) {
+    return _sys1(SYS_RMDIR, path.addr);
+}
+
+I64 self_path(U8* buf) {
+    return -1;
+}
+
+U0 exit(I64 code) {
+    _sys1(SYS_EXIT, code);
+}

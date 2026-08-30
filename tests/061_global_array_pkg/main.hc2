@@ -1,0 +1,10 @@
+import "ring";
+
+I32 main() {
+    ring.bump(0);
+    ring.bump(2);
+    ring.slots[2] = ring.slots[2] + 10;
+    "%d %d %d\n", ring.slots[0], ring.slots[1], ring.slots[2];
+    "hits %d\n", ring.hits();
+    return 0;
+}

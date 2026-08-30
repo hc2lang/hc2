@@ -1,0 +1,12 @@
+// package state as a mutable array: written from here and from the importer
+I64 slots[3] = {};
+I64 _hits[2] = {};
+
+U0 bump(I64 i) {
+    slots[i] = slots[i] + 1;
+    _hits[0] = _hits[0] + 1;
+}
+
+I64 hits() {
+    return _hits[0];
+}

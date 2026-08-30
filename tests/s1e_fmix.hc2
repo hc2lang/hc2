@@ -1,0 +1,6 @@
+I32 main() {
+    I64 v = 3;
+    F64 x = (v as F64) + 1.5;
+    F64 bad = v + 1.5;
+    return 0;
+}

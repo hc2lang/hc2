@@ -1,0 +1,76 @@
+import "str";
+
+const I64 SH_NONE  = 1;
+const I64 SH_ONE   = 2;
+const I64 SH_TWO   = 3;
+const I64 SH_LABEL = 4;
+
+const I64 GR_SAFE  = 1;
+const I64 GR_FRAME = 3;
+
+const I64 OP_REG   = 1;
+const I64 OP_VAR   = 2;
+const I64 OP_IMM   = 3;
+const I64 OP_LABEL = 4;
+const I64 OP_MEM   = 5;
+
+const I64 X86 = 0;
+const I64 A64 = 2;
+
+I64 mkreg(I64 idx, I64 size) {
+    return idx + size * 256;
+}
+
+I64 reg_idx(I64 r)  {
+    return r % 256;
+}
+
+I64 reg_size(I64 r) {
+    return r / 256;
+}
+
+I64 isa_grade(U8* m) {
+    if str.eq(m, "RET") {
+        return GR_FRAME;
+    }
+    if str.eq(m, "LEAVE") {
+        return GR_FRAME;
+    }
+    return GR_SAFE;
+}
+
+I64 isa_callee_saved_bit(I64 r) {
+    I64 i = reg_idx(r);
+    if i == 3 {
+        return 1;
+    }
+    if i == 12 {
+        return 2;
+    }
+    if i == 13 {
+        return 4;
+    }
+    if i == 14 {
+        return 8;
+    }
+    if i == 15 {
+        return 16;
+    }
+    return 0;
+}
+
+U8* isa_saved_name(I64 bit) {
+    if bit == 1 {
+        return "rbx";
+    }
+    if bit == 2 {
+        return "r12";
+    }
+    if bit == 4 {
+        return "r13";
+    }
+    if bit == 8 {
+        return "r14";
+    }
+    return "r15";
+}

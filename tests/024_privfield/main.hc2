@@ -1,0 +1,7 @@
+import "geom";
+
+I32 main() {
+    geom.Pt v = geom.make(1, 2);
+    "%d\n", v._tag;
+    return 0;
+}

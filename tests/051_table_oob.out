@@ -1,0 +1,2 @@
+before
+tests/051_table_oob.hc2:6: trap: out of bounds

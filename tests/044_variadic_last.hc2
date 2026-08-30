@@ -1,0 +1,6 @@
+U0 f(I64... xs, I64 y) {
+}
+
+I32 main() {
+    return 0;
+}

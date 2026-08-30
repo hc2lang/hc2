@@ -1,0 +1,663 @@
+import "str";
+import "hc2/isa";
+
+I64 reg(U8* s) {
+    if str.eq(s, "RAX") {
+        return isa.mkreg(0, 8);
+    }
+    if str.eq(s, "RCX") {
+        return isa.mkreg(1, 8);
+    }
+    if str.eq(s, "RDX") {
+        return isa.mkreg(2, 8);
+    }
+    if str.eq(s, "RBX") {
+        return isa.mkreg(3, 8);
+    }
+    if str.eq(s, "RSP") {
+        return isa.mkreg(4, 8);
+    }
+    if str.eq(s, "RBP") {
+        return isa.mkreg(5, 8);
+    }
+    if str.eq(s, "RSI") {
+        return isa.mkreg(6, 8);
+    }
+    if str.eq(s, "RDI") {
+        return isa.mkreg(7, 8);
+    }
+    if str.eq(s, "R8") {
+        return isa.mkreg(8, 8);
+    }
+    if str.eq(s, "R9") {
+        return isa.mkreg(9, 8);
+    }
+    if str.eq(s, "R10") {
+        return isa.mkreg(10, 8);
+    }
+    if str.eq(s, "R11") {
+        return isa.mkreg(11, 8);
+    }
+    if str.eq(s, "R12") {
+        return isa.mkreg(12, 8);
+    }
+    if str.eq(s, "R13") {
+        return isa.mkreg(13, 8);
+    }
+    if str.eq(s, "R14") {
+        return isa.mkreg(14, 8);
+    }
+    if str.eq(s, "R15") {
+        return isa.mkreg(15, 8);
+    }
+    if str.eq(s, "EAX") {
+        return isa.mkreg(0, 4);
+    }
+    if str.eq(s, "ECX") {
+        return isa.mkreg(1, 4);
+    }
+    if str.eq(s, "EDX") {
+        return isa.mkreg(2, 4);
+    }
+    if str.eq(s, "EBX") {
+        return isa.mkreg(3, 4);
+    }
+    if str.eq(s, "ESP") {
+        return isa.mkreg(4, 4);
+    }
+    if str.eq(s, "EBP") {
+        return isa.mkreg(5, 4);
+    }
+    if str.eq(s, "ESI") {
+        return isa.mkreg(6, 4);
+    }
+    if str.eq(s, "EDI") {
+        return isa.mkreg(7, 4);
+    }
+    if str.eq(s, "R8D") {
+        return isa.mkreg(8, 4);
+    }
+    if str.eq(s, "R9D") {
+        return isa.mkreg(9, 4);
+    }
+    if str.eq(s, "R10D") {
+        return isa.mkreg(10, 4);
+    }
+    if str.eq(s, "R11D") {
+        return isa.mkreg(11, 4);
+    }
+    if str.eq(s, "R12D") {
+        return isa.mkreg(12, 4);
+    }
+    if str.eq(s, "R13D") {
+        return isa.mkreg(13, 4);
+    }
+    if str.eq(s, "R14D") {
+        return isa.mkreg(14, 4);
+    }
+    if str.eq(s, "R15D") {
+        return isa.mkreg(15, 4);
+    }
+    if str.eq(s, "AX") {
+        return isa.mkreg(0, 2);
+    }
+    if str.eq(s, "CX") {
+        return isa.mkreg(1, 2);
+    }
+    if str.eq(s, "DX") {
+        return isa.mkreg(2, 2);
+    }
+    if str.eq(s, "BX") {
+        return isa.mkreg(3, 2);
+    }
+    if str.eq(s, "SP") {
+        return isa.mkreg(4, 2);
+    }
+    if str.eq(s, "BP") {
+        return isa.mkreg(5, 2);
+    }
+    if str.eq(s, "SI") {
+        return isa.mkreg(6, 2);
+    }
+    if str.eq(s, "DI") {
+        return isa.mkreg(7, 2);
+    }
+    if str.eq(s, "R8W") {
+        return isa.mkreg(8, 2);
+    }
+    if str.eq(s, "R9W") {
+        return isa.mkreg(9, 2);
+    }
+    if str.eq(s, "R10W") {
+        return isa.mkreg(10, 2);
+    }
+    if str.eq(s, "R11W") {
+        return isa.mkreg(11, 2);
+    }
+    if str.eq(s, "R12W") {
+        return isa.mkreg(12, 2);
+    }
+    if str.eq(s, "R13W") {
+        return isa.mkreg(13, 2);
+    }
+    if str.eq(s, "R14W") {
+        return isa.mkreg(14, 2);
+    }
+    if str.eq(s, "R15W") {
+        return isa.mkreg(15, 2);
+    }
+    if str.eq(s, "AL") {
+        return isa.mkreg(0, 1);
+    }
+    if str.eq(s, "CL") {
+        return isa.mkreg(1, 1);
+    }
+    if str.eq(s, "DL") {
+        return isa.mkreg(2, 1);
+    }
+    if str.eq(s, "BL") {
+        return isa.mkreg(3, 1);
+    }
+    if str.eq(s, "SPL") {
+        return isa.mkreg(4, 1);
+    }
+    if str.eq(s, "BPL") {
+        return isa.mkreg(5, 1);
+    }
+    if str.eq(s, "SIL") {
+        return isa.mkreg(6, 1);
+    }
+    if str.eq(s, "DIL") {
+        return isa.mkreg(7, 1);
+    }
+    if str.eq(s, "R8B") {
+        return isa.mkreg(8, 1);
+    }
+    if str.eq(s, "R9B") {
+        return isa.mkreg(9, 1);
+    }
+    if str.eq(s, "R10B") {
+        return isa.mkreg(10, 1);
+    }
+    if str.eq(s, "R11B") {
+        return isa.mkreg(11, 1);
+    }
+    if str.eq(s, "R12B") {
+        return isa.mkreg(12, 1);
+    }
+    if str.eq(s, "R13B") {
+        return isa.mkreg(13, 1);
+    }
+    if str.eq(s, "R14B") {
+        return isa.mkreg(14, 1);
+    }
+    if str.eq(s, "R15B") {
+        return isa.mkreg(15, 1);
+    }
+    return -1;
+}
+
+I64 shape(U8* m) {
+    if str.eq(m, "SYSCALL") {
+        return isa.SH_NONE;
+    }
+    if str.eq(m, "NOP") {
+        return isa.SH_NONE;
+    }
+    if str.eq(m, "CQO") {
+        return isa.SH_NONE;
+    }
+    if str.eq(m, "CPUID") {
+        return isa.SH_NONE;
+    }
+    if str.eq(m, "RDTSC") {
+        return isa.SH_NONE;
+    }
+    if str.eq(m, "HLT") {
+        return isa.SH_NONE;
+    }
+    if str.eq(m, "CLI") {
+        return isa.SH_NONE;
+    }
+    if str.eq(m, "STI") {
+        return isa.SH_NONE;
+    }
+    if str.eq(m, "IRETQ") {
+        return isa.SH_NONE;
+    }
+    if str.eq(m, "LEAVE") {
+        return isa.SH_NONE;
+    }
+    if str.eq(m, "RET") {
+        return isa.SH_NONE;
+    }
+    if str.eq(m, "NEG") {
+        return isa.SH_ONE;
+    }
+    if str.eq(m, "NOT") {
+        return isa.SH_ONE;
+    }
+    if str.eq(m, "INC") {
+        return isa.SH_ONE;
+    }
+    if str.eq(m, "DEC") {
+        return isa.SH_ONE;
+    }
+    if str.eq(m, "MUL") {
+        return isa.SH_ONE;
+    }
+    if str.eq(m, "DIV") {
+        return isa.SH_ONE;
+    }
+    if str.eq(m, "IDIV") {
+        return isa.SH_ONE;
+    }
+    if str.eq(m, "PUSH") {
+        return isa.SH_ONE;
+    }
+    if str.eq(m, "POP") {
+        return isa.SH_ONE;
+    }
+    if str.eq(m, "CALL") {
+        return isa.SH_ONE;
+    }
+    if str.eq(m, "MOV") {
+        return isa.SH_TWO;
+    }
+    if str.eq(m, "ADD") {
+        return isa.SH_TWO;
+    }
+    if str.eq(m, "SUB") {
+        return isa.SH_TWO;
+    }
+    if str.eq(m, "AND") {
+        return isa.SH_TWO;
+    }
+    if str.eq(m, "OR") {
+        return isa.SH_TWO;
+    }
+    if str.eq(m, "XOR") {
+        return isa.SH_TWO;
+    }
+    if str.eq(m, "CMP") {
+        return isa.SH_TWO;
+    }
+    if str.eq(m, "TEST") {
+        return isa.SH_TWO;
+    }
+    if str.eq(m, "IMUL") {
+        return isa.SH_TWO;
+    }
+    if str.eq(m, "SHL") {
+        return isa.SH_TWO;
+    }
+    if str.eq(m, "SHR") {
+        return isa.SH_TWO;
+    }
+    if str.eq(m, "SAR") {
+        return isa.SH_TWO;
+    }
+    if str.eq(m, "XCHG") {
+        return isa.SH_TWO;
+    }
+    if str.eq(m, "IN") {
+        return isa.SH_TWO;
+    }
+    if str.eq(m, "OUT") {
+        return isa.SH_TWO;
+    }
+    if str.eq(m, "JMP") {
+        return isa.SH_LABEL;
+    }
+    if str.eq(m, "JE") {
+        return isa.SH_LABEL;
+    }
+    if str.eq(m, "JNE") {
+        return isa.SH_LABEL;
+    }
+    if str.eq(m, "JZ") {
+        return isa.SH_LABEL;
+    }
+    if str.eq(m, "JNZ") {
+        return isa.SH_LABEL;
+    }
+    if str.eq(m, "JL") {
+        return isa.SH_LABEL;
+    }
+    if str.eq(m, "JLE") {
+        return isa.SH_LABEL;
+    }
+    if str.eq(m, "JG") {
+        return isa.SH_LABEL;
+    }
+    if str.eq(m, "JGE") {
+        return isa.SH_LABEL;
+    }
+    if str.eq(m, "JB") {
+        return isa.SH_LABEL;
+    }
+    if str.eq(m, "JBE") {
+        return isa.SH_LABEL;
+    }
+    if str.eq(m, "JA") {
+        return isa.SH_LABEL;
+    }
+    if str.eq(m, "JAE") {
+        return isa.SH_LABEL;
+    }
+    if str.eq(m, "JS") {
+        return isa.SH_LABEL;
+    }
+    if str.eq(m, "JNS") {
+        return isa.SH_LABEL;
+    }
+    return 0;
+}
+
+const I64 OPC_SYSCALL0 = 0x0f;
+const I64 OPC_SYSCALL1 = 0x05;
+const I64 OPC_LEAVE    = 0xc9;
+const I64 OPC_RET      = 0xc3;
+const I64 OPC_CQO_REX  = 0x48;
+const I64 OPC_CQO      = 0x99;
+const I64 OPC_NOP      = 0x90;
+const I64 OPC_MOVSB    = 0xa4;
+const I64 OPC_CDQ      = 0x99;
+const I64 OPC_REP      = 0xf3;
+
+const I64 OPC_TWOBYTE  = 0x0f;
+const I64 OPC_JCC_SHORT = 0x70;
+const I64 OPC_JCC_NEAR = 0x80;
+const I64 OPC_SETCC    = 0x90;
+const I64 OPC_JMP_SHORT = 0xeb;
+const I64 OPC_JMP_NEAR = 0xe9;
+const I64 OPC_CALL     = 0xe8;
+
+const I64 OPC_PUSH_R   = 0x50;
+const I64 OPC_POP_R    = 0x58;
+const I64 OPC_PUSH_I8  = 0x6a;
+const I64 OPC_PUSH_I32 = 0x68;
+const I64 OPC_REX_B    = 0x41;
+const I64 OPC_REX      = 0x40;
+const I64 OPC_REX_W    = 0x48;
+const I64 OPC_PFX_16   = 0x66;
+
+const I64 OPC_UNARY    = 0xf7;
+const I64 EXT_NOT      = 2;
+const I64 EXT_NEG      = 3;
+const I64 EXT_MUL      = 4;
+const I64 EXT_IMUL     = 5;
+const I64 EXT_DIV      = 6;
+const I64 EXT_IDIV     = 7;
+const I64 OPC_INCDEC   = 0xff;
+const I64 EXT_INC      = 0;
+const I64 EXT_DEC      = 1;
+
+const I64 OPC_MOV_RM_R = 0x89;
+const I64 OPC_MOV_R_RM = 0x8b;
+const I64 OPC_MOV_RM_I = 0xc7;
+const I64 OPC_MOV_R32_I = 0xb8;
+const I64 OPC_LEA      = 0x8d;
+const I64 OPC_MOVZX    = 0xb6;
+const I64 OPC_MOVSX    = 0xbe;
+const I64 OPC_MOVSXD   = 0x63;
+const I64 OPC_TEST_RM_R = 0x85;
+const I64 OPC_TEST_RM_I = 0xf7;
+const I64 OPC_IMUL_R_RM = 0xaf;
+const I64 OPC_IMUL_I8  = 0x6b;
+const I64 OPC_IMUL_I32 = 0x69;
+const I64 OPC_SHIFT_CL = 0xd3;
+const I64 OPC_SHIFT_I  = 0xc1;
+const I64 EXT_SHL      = 4;
+const I64 EXT_SHR      = 5;
+const I64 EXT_SAR      = 7;
+const I64 OPC_GRP1_I8  = 0x83;
+const I64 OPC_GRP1_I32 = 0x81;
+
+I64 jcc_code(U8* m) {
+    if str.eq(m, "jo") {
+        return 0;
+    }
+    if str.eq(m, "jno") {
+        return 1;
+    }
+    if str.eq(m, "jb") {
+        return 2;
+    }
+    if str.eq(m, "jc") {
+        return 2;
+    }
+    if str.eq(m, "jae") {
+        return 3;
+    }
+    if str.eq(m, "jnc") {
+        return 3;
+    }
+    if str.eq(m, "je") {
+        return 4;
+    }
+    if str.eq(m, "jz") {
+        return 4;
+    }
+    if str.eq(m, "jne") {
+        return 5;
+    }
+    if str.eq(m, "jnz") {
+        return 5;
+    }
+    if str.eq(m, "jbe") {
+        return 6;
+    }
+    if str.eq(m, "ja") {
+        return 7;
+    }
+    if str.eq(m, "js") {
+        return 8;
+    }
+    if str.eq(m, "jns") {
+        return 9;
+    }
+    if str.eq(m, "jl") {
+        return 12;
+    }
+    if str.eq(m, "jge") {
+        return 13;
+    }
+    if str.eq(m, "jle") {
+        return 14;
+    }
+    if str.eq(m, "jg") {
+        return 15;
+    }
+    return -1;
+}
+
+I64 setcc_code(U8* m) {
+    if str.eq(m, "sete") {
+        return 4;
+    }
+    if str.eq(m, "setne") {
+        return 5;
+    }
+    if str.eq(m, "setb") {
+        return 2;
+    }
+    if str.eq(m, "setbe") {
+        return 6;
+    }
+    if str.eq(m, "seta") {
+        return 7;
+    }
+    if str.eq(m, "setae") {
+        return 3;
+    }
+    if str.eq(m, "setl") {
+        return 12;
+    }
+    if str.eq(m, "setge") {
+        return 13;
+    }
+    if str.eq(m, "setle") {
+        return 14;
+    }
+    if str.eq(m, "setg") {
+        return 15;
+    }
+    return -1;
+}
+
+I64 grp1_ext(U8* m) {
+    if str.eq(m, "add") {
+        return 0;
+    }
+    if str.eq(m, "or") {
+        return 1;
+    }
+    if str.eq(m, "and") {
+        return 4;
+    }
+    if str.eq(m, "sub") {
+        return 5;
+    }
+    if str.eq(m, "xor") {
+        return 6;
+    }
+    if str.eq(m, "cmp") {
+        return 7;
+    }
+    return -1;
+}
+
+I64 grp1_op(U8* m) {
+    if str.eq(m, "add") {
+        return 0x01;
+    }
+    if str.eq(m, "or") {
+        return 0x09;
+    }
+    if str.eq(m, "and") {
+        return 0x21;
+    }
+    if str.eq(m, "sub") {
+        return 0x29;
+    }
+    if str.eq(m, "xor") {
+        return 0x31;
+    }
+    if str.eq(m, "cmp") {
+        return 0x39;
+    }
+    return -1;
+}
+
+const I64 F_NONE   = 1;
+const I64 F_RM_R   = 2;
+const I64 F_R_RM   = 3;
+const I64 F_RM_I   = 4;
+const I64 F_M      = 5;
+const I64 F_REL    = 6;
+const I64 F_JMP    = 7;
+const I64 F_JCC    = 8;
+const I64 F_SETCC  = 9;
+const I64 F_PLUSR  = 10;
+const I64 F_MOVABS = 11;
+const I64 F_SHIFT  = 12;
+const I64 F_IMUL_I = 13;
+const I64 F_MOV_RI = 14;
+
+const I64 IF_0F    = 1;
+const I64 IF_W     = 2;
+
+struct Insn {
+    U8* name;
+    I64 form;
+    I64 opc;
+    I64 ext;
+    I64 flags;
+}
+
+const I64 NINSN = 60;
+
+const Insn TABLE[NINSN] = {
+    {"syscall", F_NONE,   0x05,  -1, IF_0F},
+    {"leave",  F_NONE,   0xc9,  -1, 0},
+    {"ret",    F_NONE,   0xc3,  -1, 0},
+    {"iretq",  F_NONE,   0xcf,  -1, IF_W},
+    {"cqo",    F_NONE,   0x99,  -1, IF_W},
+    {"cdq",    F_NONE,   0x99,  -1, 0},
+    {"nop",    F_NONE,   0x90,  -1, 0},
+    {"movsb",  F_NONE,   0xa4,  -1, 0},
+    {"mov",    F_MOV_RI, 0xb8,  -1, 0},
+    {"mov",    F_RM_I,   0xc7,  0,     0},
+    {"mov",    F_R_RM,   0x8b,  -1, 0},
+    {"mov",    F_RM_R,   0x89,  -1, 0},
+    {"movabs", F_MOVABS, 0xb8,  -1, IF_W},
+    {"lea",    F_R_RM,   0x8d,  -1, 0},
+    {"movzx",  F_R_RM,   0xb6,  -1, IF_0F},
+    {"movsx",  F_R_RM,   0xbe,  -1, IF_0F},
+    {"movsxd", F_R_RM,   0x63,  -1, 0},
+    {"add",    F_RM_I,   0x81,  0,     0},
+    {"add",    F_R_RM,   0x03,  -1, 0},
+    {"add",    F_RM_R,   0x01,  -1, 0},
+    {"or",     F_RM_I,   0x81,  1,     0},
+    {"or",     F_R_RM,   0x0b,  -1, 0},
+    {"or",     F_RM_R,   0x09,  -1, 0},
+    {"and",    F_RM_I,   0x81,  4,     0},
+    {"and",    F_R_RM,   0x23,  -1, 0},
+    {"and",    F_RM_R,   0x21,  -1, 0},
+    {"sub",    F_RM_I,   0x81,  5,     0},
+    {"sub",    F_R_RM,   0x2b,  -1, 0},
+    {"sub",    F_RM_R,   0x29,  -1, 0},
+    {"xor",    F_RM_I,   0x81,  6,     0},
+    {"xor",    F_R_RM,   0x33,  -1, 0},
+    {"xor",    F_RM_R,   0x31,  -1, 0},
+    {"cmp",    F_RM_I,   0x81,  7,     0},
+    {"cmp",    F_R_RM,   0x3b,  -1, 0},
+    {"cmp",    F_RM_R,   0x39,  -1, 0},
+    {"test",   F_RM_I,   0xf7,  0,     0},
+    {"test",   F_RM_R,   0x85,  -1, 0},
+    {"xchg",   F_RM_R,   0x87,  -1, 0},
+    {"imul",   F_IMUL_I, 0x69,  -1, 0},
+    {"imul",   F_R_RM,   0xaf,  -1, IF_0F},
+    {"imul",   F_M,      0xf7,  5,     0},
+    {"neg",    F_M,      0xf7,  3,     0},
+    {"not",    F_M,      0xf7,  2,     0},
+    {"mul",    F_M,      0xf7,  4,     0},
+    {"div",    F_M,      0xf7,  6,     0},
+    {"idiv",   F_M,      0xf7,  7,     0},
+    {"inc",    F_M,      0xff,  0,     0},
+    {"dec",    F_M,      0xff,  1,     0},
+    {"shl",    F_SHIFT,  0xd3,  4,     0},
+    {"shr",    F_SHIFT,  0xd3,  5,     0},
+    {"sar",    F_SHIFT,  0xd3,  7,     0},
+    {"push",   F_PLUSR,  0x50,  -1, 0},
+    {"pop",    F_PLUSR,  0x58,  -1, 0},
+    {"call",   F_REL,    0xe8,  -1, 0},
+    {"jmp",    F_JMP,    0xeb,  0xe9,  0},
+    {"j",      F_JCC,    0x70,  0x80,  0},
+    {"set",    F_SETCC,  0x90,  -1, IF_0F},
+    {"hlt",    F_NONE,   0xf4,  -1, 0},
+    {"cli",    F_NONE,   0xfa,  -1, 0},
+    {"sti",    F_NONE,   0xfb,  -1, 0}
+};
+
+I64 opc(I64 i)   {
+    return TABLE[i].opc;
+}
+
+I64 ext(I64 i)   {
+    return TABLE[i].ext;
+}
+
+I64 flags(I64 i) {
+    return TABLE[i].flags;
+}
+
+I64 find(U8* name, I64 form) {
+    for I64 i = 0; i < NINSN; i++ {
+        if TABLE[i].form == form && str.eq(TABLE[i].name, name) {
+            return i;
+        }
+    }
+    return -1;
+}

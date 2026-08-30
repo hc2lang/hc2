@@ -1,0 +1,19 @@
+// file I/O with no compiler builtins: sys is ordinary hc2 over asm blocks
+import "sys";
+import "rt";
+import "heap";
+
+I32 main() {
+    I64 fd = sys.create("/tmp/hc2_021.tmp");
+    sys.write(fd, "hello file\n");
+    sys.close(fd);
+
+    I64 rfd = sys.open("/tmp/hc2_021.tmp");
+    U8* buf = heap.alloc(64);
+    I64 n = sys.read(rfd, buf);
+    sys.close(rfd);
+
+    "read %d: %s", n, buf[0 : n];
+    "argc %d\n", rt.argc();
+    return 0;
+}

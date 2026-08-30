@@ -1,0 +1,41 @@
+import "hc2/ast";
+import "hc2/lex";
+import "hc2/parse";
+import "hc2/check";
+import "hc2/gen";
+import "hc2/gen/a64";
+import "hc2/opt";
+import "hc2/asm";
+import "heap";
+
+// The arm64 backend end to end: a self-contained program through
+// lex/parse/check/opt into a64 text, assembled by the arm64 assembler
+// mode. The words are the golden — cross-checked against GNU as once,
+// when this .out was made. Calls, recursion, loops with register locals,
+// frame arrays, prints and a switch all pass through.
+
+I32 main() {
+    U8* src = "I64 add3(I64 a, I64 b, I64 c) {\n    return a + b + c;\n}\nI64 fib(I64 n) {\n    if n < 2 {\n        return n;\n    }\n    return fib(n - 1) + fib(n - 2);\n}\nI32 main() {\n    I64 s = 0;\n    for I64 i = 0; i < 10; i++ {\n        s = s + i;\n    }\n    I64 arr[4] = {};\n    arr[0] = 5;\n    arr[1] = arr[0] * 3;\n    switch arr[0] {\n        case 5: s = s + 100;\n        case 6: s = s + 200;\n        default: s = s + 300;\n    }\n    s = s + arr[1] + add3(1, 2, 3) + fib(10);\n    \"%d %x\\n\", s, s;\n    return 0;\n}\n";
+    ast.Ast* t = ast.ast_new(4096, 1 << 16);
+    ast.pkg_new(t, "");
+    ast.ast_addfile(t, "t.hc2", 0);
+    parse.parse_program(lex.lex_new(t, "t.hc2", src));
+    check.Ck* c = check.ck_new(t);
+    check.check_all(c);
+    gen.Em* e = gen.em_sized(c, 1 << 20);
+    e.o.on = 1;
+    opt.op_run(e.o);
+    a64.gen_unit(e);
+    "asm %d\n", e.len;
+    asm.As* s = asm.as_sized(1 << 20);
+    s.isa = 2;
+    asm.assemble_file(s, e.buf[0 : e.len]);
+    "text %d\n", s.tlen;
+    for I64 i = 0; i < s.tlen; i = i + 4 {
+        I64 word = (s.text[i] as I64) | ((s.text[i + 1] as I64) << 8)
+            | ((s.text[i + 2] as I64) << 16) | ((s.text[i + 3] as I64) << 24);
+        "%x\n", word;
+    }
+    "rodata %d relocs %d\n", s.rlen, s.nrel;
+    return 0;
+}

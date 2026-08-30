@@ -1,0 +1,5 @@
+wrote Hi
+len 8
+last byte ok
+revoked
+tests/052_from_raw/main.hc2:40: trap: use after free

@@ -1,0 +1,41 @@
+// mutable global arrays: storage in .data with the capability header below,
+// so indexing, writing, & and .len all work like any other array
+I64 buf[4] = {10, 20, 30, 40};
+U8 bytes[6] = {};
+I64 grid[2][3] = {{1, 2, 3}, {4, 5, 6}};
+
+U0 fill(I64 v) {
+    for I64 i = 0; i < 4; i++ {
+        buf[i] = v + i;
+    }
+}
+
+I64 sum(I64* p) {
+    I64 s = 0;
+    for I64 i = 0; i < 4; i++ {
+        s = s + p[i];
+    }
+    return s;
+}
+
+I32 main() {
+    "%d %d\n", buf[0], buf[3];
+    buf[1] = buf[1] + 5;
+    "%d\n", buf[1];
+    fill(100);
+    "%d %d\n", buf[0], buf[3];
+
+    "%d\n", bytes[5] as I64;
+    bytes[5] = 200;
+    "%d\n", bytes[5] as I64;
+
+    grid[1][2] = grid[0][0] + 40;
+    "%d %d\n", grid[1][2], grid[0][1];
+
+    I64* p = &buf;
+    "len %d\n", p.len;
+    "sum %d\n", sum(p);
+    p[2] = 7;
+    "%d\n", buf[2];
+    return 0;
+}

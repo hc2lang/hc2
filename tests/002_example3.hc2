@@ -1,0 +1,11 @@
+I32 main() {
+    if 1 < 2 {
+        "1 is less than 2\n";
+    } else {
+        "1 is not less than 2\n";
+    }
+
+    for I32 i = 0; i < 10; i++ {
+        "i: %d\n", i;
+    }
+}

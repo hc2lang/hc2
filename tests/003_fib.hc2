@@ -1,0 +1,12 @@
+// main first, fib after: proves that definition order does not matter
+I32 main() {
+    "fib(10) = %d\n", fib(10);
+    return 0;
+}
+
+I32 fib(I32 n) {
+    if n < 2 {
+        return n;
+    }
+    return fib(n - 1) + fib(n - 2);
+}

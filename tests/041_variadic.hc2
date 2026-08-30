@@ -1,0 +1,25 @@
+I64 sum(I64... xs) {
+    I64 total = 0;
+    for I64 i = 0; i < xs.len / 8; i++ {
+        total = total + xs[i];
+    }
+    return total;
+}
+
+U0 log(U8* tag, I64... vals) {
+    "%s:", tag;
+    for I64 i = 0; i < vals.len / 8; i++ {
+        " %d", vals[i];
+    }
+    " (%d args)\n", vals.len / 8;
+}
+
+I32 main() {
+    "sum %d\n", sum(1, 2, 3, 4, 5);
+    "sum %d\n", sum();
+    log("empty");
+    log("three", 10, 20, 30);
+    I64 x = 7;
+    log("expr", x * 2, x + 1);
+    return 0;
+}
