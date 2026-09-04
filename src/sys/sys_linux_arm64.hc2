@@ -3,20 +3,28 @@ U8* from_raw(I64 addr, I64 len) {
     unsafe {
         I64 h = addr - 16;
         I64 h8 = addr - 8;
-        I64 one = 1;
+        I64 g = 0;
+        asm {
+            LDR X9, h8
+            LDR X10, [X9]
+            STR X10, g
+        }
+        if g == 0 {
+            g = 1;
+        }
         asm {
             LDR X9, h
             LDR X10, len
             STR X10, [X9]
             LDR X9, h8
-            LDR X10, one
+            LDR X10, g
             STR X10, [X9]
         }
         _Cap c = {};
         c.w.addr = addr;
         c.w.hdr = h | 1;
         c.w.offlen = len << 32;
-        c.w.gen = 1;
+        c.w.gen = g;
         return c.p;
     }
 }

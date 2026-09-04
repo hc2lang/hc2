@@ -1,0 +1,18 @@
+// release drops the free list: a block freed above the mark must not be handed
+// out twice, once by the list and once by the bump pointer.
+import "heap";
+
+I32 main() {
+    I64 m = heap.mark();
+    U8* p = heap.alloc(64);
+    heap.free(p);
+    heap.release(m);
+    U8* q = heap.alloc(64);
+    U8* r = heap.alloc(64);
+    if q.addr == r.addr {
+        "aliased\n";
+        return 1;
+    }
+    "distinct\n";
+    return 0;
+}

@@ -1,0 +1,18 @@
+// free hands the block back: the next alloc of the same class gets the same
+// address, and the pointer that was freed still traps on the reused block.
+import "heap";
+
+I32 main() {
+    U8* a = heap.alloc(64);
+    I64 addr = a.addr;
+    heap.free(a);
+    U8* b = heap.alloc(64);
+    if b.addr != addr {
+        "not reused\n";
+        return 1;
+    }
+    "reused\n";
+    U8 c = a[0];
+    "unreachable %d\n", c as I64;
+    return 0;
+}

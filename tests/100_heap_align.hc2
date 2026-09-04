@@ -1,0 +1,14 @@
+// every allocation is 16-byte aligned, including the ones after a tiny one
+import "heap";
+
+I32 main() {
+    U8* a = heap.alloc(0);
+    U8* b = heap.alloc(1);
+    U8* c = heap.alloc(17);
+    if a.addr % 16 != 0 || b.addr % 16 != 0 || c.addr % 16 != 0 {
+        "misaligned\n";
+        return 1;
+    }
+    "aligned\n";
+    return 0;
+}

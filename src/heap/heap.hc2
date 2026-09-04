@@ -3,8 +3,10 @@ import "sys";
 
 I64 _cur = 0;
 I64 _end = 0;
+I64 _free[32] = {};
 
 const I64 _HEAP = 256 * 1024 * 1024;
+const I64 _CLASSES = 32;
 
 I64 _base() {
     return sys.mmap(_HEAP);
@@ -30,12 +32,41 @@ U0 _init() {
     }
 }
 
+I64 _class(I64 n) {
+    if n > _HEAP {
+        _t(rt.TK_OOM);
+    }
+    I64 payload = (n + 15) / 16 * 16;
+    I64 c = 4;
+    for (1 << c) < payload {
+        c = c + 1;
+    }
+    return c;
+}
+
+I64 _block_size(I64 c) {
+    return (1 << c) + 32;
+}
+
+U0 _drop_free_list() {
+    for I64 c = 0; c < _CLASSES; c++ {
+        _free[c] = 0;
+    }
+}
+
 U8* alloc(I64 n) {
     _init();
     if n < 0 {
         _t(rt.TK_OOM);
     }
-    I64 need = (n + 15) / 16 * 16 + 32;
+    I64 c = _class(n);
+    I64 h = _free[c];
+    if h != 0 {
+        I64* w = sys.from_raw(h, 16) as I64*;
+        _free[c] = w[0];
+        return sys.from_raw(h + 16, n);
+    }
+    I64 need = _block_size(c);
     if _cur + need > _end {
         _t(rt.TK_OOM);
     }
@@ -54,6 +85,7 @@ U0 release(I64 m) {
     if m < _end - _size() || m > _cur {
         _t(rt.TK_NOTBASE);
     }
+    _drop_free_list();
     _cur = m;
 }
 
@@ -72,4 +104,10 @@ U0 free(U8* p) {
         _t(rt.TK_DFREE);
     }
     h[1] = h[1] + 1;
+    if p.hdr < _end - _size() || p.hdr >= _cur {
+        return;
+    }
+    I64 c = _class(h[0]);
+    h[0] = _free[c];
+    _free[c] = p.hdr;
 }

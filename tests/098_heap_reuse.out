@@ -1,0 +1,2 @@
+reused
+tests/098_heap_reuse.hc2:15: trap: use after free
