@@ -1,0 +1,15 @@
+import "heap";
+
+struct Pt {
+    I64 x;
+    U8* name;
+}
+
+I32 main() {
+    U8* arena = heap.alloc(4096);
+    Pt* ok = arena[80 : 120] as Pt*;
+    ok.x = 1;
+    Pt* bad = arena[100 : 140] as Pt*;
+    "%d\n", bad.x;
+    return 0;
+}

@@ -1,0 +1,12 @@
+struct Pt {
+    I64 x;
+    U8* name;
+}
+
+I32 main() {
+    Pt s = {1, "hi"};
+    Pt* p = &s;
+    U8* raw = p as U8*;
+    raw[8] = 1;
+    return 0;
+}

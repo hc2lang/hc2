@@ -1,0 +1,1 @@
+tests/104_typed_literal.hc2:8: trap: cast to a type with capabilities needs a writable heap block

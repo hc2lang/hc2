@@ -1,0 +1,1 @@
+tests/105_typed_stack_view.hc2:9: trap: a stack struct with capabilities cannot be viewed as bytes

@@ -1,0 +1,19 @@
+import "heap";
+
+struct Pt {
+    I64 x;
+    U8* name;
+}
+
+struct Qt {
+    U8* name;
+    I64 x;
+}
+
+I32 main() {
+    U8* mem = heap.alloc(sizeof(Pt));
+    Pt* p = mem as Pt*;
+    Qt* q = mem as Qt*;
+    "%d\n", q.x;
+    return 0;
+}

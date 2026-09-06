@@ -376,6 +376,20 @@ U0 lea_sym(gen.Em* e, U8* r, I64 g) {
     gen.out(e, "\n");
 }
 
+U0 lea_sym_desc(gen.Em* e, U8* r, I64 sid) {
+    gen.out(e, "  adrp ");
+    gen.out(e, r);
+    gen.out(e, ", ");
+    gen.emit_desc_sym(e, sid);
+    gen.out(e, "\n  add ");
+    gen.out(e, r);
+    gen.out(e, ", ");
+    gen.out(e, r);
+    gen.out(e, ", :lo12:");
+    gen.emit_desc_sym(e, sid);
+    gen.out(e, "\n");
+}
+
 U0 lea_pool(gen.Em* e, U8* r, U8* prefix, I64 id) {
     gen.out(e, "  adrp ");
     gen.out(e, r);
@@ -1207,6 +1221,36 @@ U0 gen_expr(gen.Em* e, I64 n) {
         case ast.ND_AS:
             I64 hk = check.tp_kind(check.get_ty(e.c, ast.na(t, n)));
             gen_expr(e, ast.na(t, n));
+            I64 hty = check.get_ty(e.c, ast.na(t, n));
+            Bool from_caps = check.tp_cls(hty) == ast.CLS_STRUCTP && gen.struct_has_caps(e, check.tp_sid(hty));
+            Bool to_caps = check.tp_cls(ty) == ast.CLS_STRUCTP && gen.struct_has_caps(e, check.tp_sid(ty));
+            if to_caps {
+                I64 pre = gen.pool_site(e, n);
+                gen.out(e, "  ldr x10, [sp, #8]\n  and x11, x10, #-2\n  ldr w12, [sp, #16]\n");
+                gen.out(e, "  ldr x13, [x11]\n  ldr x14, [x11, #8]\n");
+                lea_sym_desc(e, "x15", check.tp_sid(ty));
+                gen.out(e, "  adrp x9, rt.hc2_anchor\n  add x9, x9, :lo12:rt.hc2_anchor\n  sub x15, x15, x9\n");
+                push_lit(e, pre);
+                gen.out(e, "  str x10, [sp, #-16]!\n  str x12, [sp, #-16]!\n  str x13, [sp, #-16]!\n");
+                gen.out(e, "  str x14, [sp, #-16]!\n  str x15, [sp, #-16]!\n");
+                gen.out(e, "  bl rt.hc2_typed\n  add sp, sp, #112\n");
+                gen.out(e, "  ldr x11, [sp, #8]\n  and x11, x11, #-2\n  str x0, [x11]\n");
+                return;
+            }
+            if from_caps && check.tp_isptr(ty) && to_caps == false {
+                I64 pre = gen.pool_site(e, n);
+                I64 ok = gen.newlabel(e);
+                I64 fb = gen.newlabel(e);
+                gen.out(e, "  ldr x11, [sp, #8]\n  and x11, x11, #-2\n  ldr x12, [x11, #8]\n  cbz x12, ");
+                gen.lbl(e, fb);
+                gen.out(e, "\n  b ");
+                gen.lbl(e, ok);
+                gen.out(e, "\n");
+                trap_arm(e, fb, pre, rt.TK_BYTEVIEW);
+                gen.lbl(e, ok);
+                gen.out(e, ":\n");
+                return;
+            }
             if check.tp_cls(ty) == ast.CLS_SCALAR {
                 I64 wk = check.tp_kind(ty);
                 if wk == ast.SK_F64 && hk != ast.SK_F64 {
