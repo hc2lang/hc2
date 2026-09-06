@@ -317,6 +317,16 @@ Three kinds of cast exist.
 - Pointer to a pointer of another type. This is how the `U8*` from `heap.alloc` becomes a struct pointer.
 - Pointer and integer do not convert in either direction. The only way to make a pointer from an address is `sys.from_raw`.
 
+A pointer cast to a struct that holds capabilities (`mem as Pt*`) has conditions.
+It must be a heap block, writable, at the block's start or at a multiple of `sizeof(Pt)`,
+and the block must not yet hold a type, or must already hold the same one. At the moment of the cast
+the block becomes typed for `Pt`, and its capability fields are zeroed (null). From then on,
+writing byte by byte into that block's capability region — with `U8*`, for instance — is a runtime error.
+The scalar fields' region can still be written.
+
+Conversely, only a heap block can view a struct that holds capabilities as `U8*`;
+viewing a stack struct as bytes, as in `&s as U8*`, is a runtime error.
+
 Numeric literals and constants such as `sizeof(...)` are untyped constants: they have no type of their own.
 They take the type of the assignment target or the other operand, and a value that does not fit that type is a compile error.
 
@@ -767,6 +777,10 @@ for I64 i = 0; i < 4000; i++ {
 }
 ```
 
+A slice cut from an arena can become a struct pointer only if that struct holds no capabilities.
+A struct with a `U8*` field, or a field that points to another struct, must be allocated one at a time
+with `heap.alloc`, or allocated as an array of that same type.
+
 ### Minting capabilities with sys.from_raw
 
 `sys.from_raw(I64 addr, I64 len)` makes a checked pointer from a raw address.
@@ -805,6 +819,11 @@ Stopping on the spot is the design; continuing in a corrupted state is not.
 | `call through null` | calling a null function pointer |
 | `not a function of this type` | the function pointer's type does not match the call |
 | `print of null` | printing a null pointer with `%s` |
+| `store into a capability` | a byte-by-byte write into a typed block's capability region, including writes made by a system call |
+| `cast to a type with capabilities needs a writable heap block` | casting a literal, the stack, or a read-only block to a struct that holds capabilities |
+| `block already holds another type` | a block already cast to a different struct that holds capabilities |
+| `cast not at an element boundary` | casting a slice at a position that is not a multiple of `sizeof` to a struct that holds capabilities |
+| `a stack struct with capabilities cannot be viewed as bytes` | casting a stack struct that holds capabilities to `U8*` or similar |
 
 ## Runtime
 

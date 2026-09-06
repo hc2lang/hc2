@@ -315,6 +315,15 @@ I32* xs = heap.alloc(64) as I32*;     // ポインタから別の型のポイン
 - ポインタから別の型のポインタへ。`heap.alloc` が返す `U8*` を構造体のポインタにするのがこれです。
 - ポインタと整数の間は、どちらの向きにも変換できません。アドレスからポインタを作る方法は `sys.from_raw` だけです。
 
+capability を含む構造体へのポインタキャスト (`mem as Pt*`) には条件があります。
+ヒープのブロックであること、書き込み可であること、ブロックの先頭か `sizeof(Pt)` の倍数の位置であること、
+そのブロックがまだ型を持たないか同じ型であること。キャストした時点でブロックは `Pt` 用になり、
+capability のフィールドはゼロ (null) になります。以後、そのブロックの capability の領域に
+`U8*` などでバイト単位に書くと実行時エラーになります。スカラーのフィールドの領域は書けます。
+
+逆に、capability を含む構造体を `U8*` として見られるのはヒープのブロックだけで、
+スタック上の構造体を `&s as U8*` のように byte view にすると実行時エラーになります。
+
 数値リテラルや `sizeof(...)` のような定数は、特定の型を持たない型なし定数です。
 代入先や演算相手の型に合わせて型が決まり、その型に収まらない値はコンパイルエラーになります。
 
@@ -767,6 +776,10 @@ for I64 i = 0; i < 4000; i++ {
 }
 ```
 
+arena から切り出したスライスを構造体のポインタにできるのは、その構造体が capability を含まない場合だけです。
+`U8*` や他の構造体へのポインタをフィールドに持つ構造体は、1 個ずつ `heap.alloc` するか、
+同じ型の配列として確保します。
+
 ### sys.from_rawによるcapabilityの鋳造
 
 `sys.from_raw(I64 addr, I64 len)` は、生のアドレスから検査付きのポインタを作ります。
@@ -805,6 +818,11 @@ U8* p = sys.from_raw(base + 32, n);      // 検査付きポインタになる
 | `call through null` | null 関数ポインタの呼び出し |
 | `not a function of this type` | 関数ポインタの型が呼び出し側と一致しない |
 | `print of null` | null ポインタを `%s` で出力 |
+| `store into a capability` | 型付きブロックの capability の領域へのバイト単位の書き込み (システムコールによる書き込みも含む) |
+| `cast to a type with capabilities needs a writable heap block` | リテラル・スタック・読み取り専用ブロックを capability 入りの構造体にキャスト |
+| `block already holds another type` | すでに別の capability 入り構造体としてキャスト済みのブロック |
+| `cast not at an element boundary` | `sizeof` の倍数でない位置のスライスを capability 入りの構造体にキャスト |
+| `a stack struct with capabilities cannot be viewed as bytes` | スタック上の capability 入り構造体を `U8*` などにキャスト |
 
 ## ランタイム
 
