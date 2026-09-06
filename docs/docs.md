@@ -729,8 +729,7 @@ import "heap";
 | `I64 mark()` | record the current allocation position |
 | `U0 release(I64 m)` | free everything allocated since `mark` at once |
 
-Memory from `alloc` is zero-filled when it is freshly allocated, but keeps its previous contents
-when a freed block is reused. Running out of memory is a runtime error.
+Memory from `alloc` is always zero-filled. Running out of memory is a runtime error.
 
 ### free and revocation
 

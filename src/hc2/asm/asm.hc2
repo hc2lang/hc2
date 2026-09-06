@@ -461,6 +461,7 @@ I64 reg_lookup(As* s, I64 off, I64 len, Op* o) {
         up[i] = c as U8;
     }
     I64 r = x86.reg(up[0 : len]);
+    heap.free(up);
     if r < 0 {
         return -1;
     }

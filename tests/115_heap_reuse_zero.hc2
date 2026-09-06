@@ -1,0 +1,22 @@
+// a reused block comes back zero-filled, exactly like a fresh one
+import "heap";
+
+I32 main() {
+    U8* a = heap.alloc(32);
+    for I64 i = 0; i < 32; i++ {
+        a[i] = 0xff;
+    }
+    I64 addr = a.addr;
+    heap.free(a);
+    U8* b = heap.alloc(32);
+    if b.addr != addr {
+        "not reused\n";
+        return 1;
+    }
+    I64 sum = 0;
+    for I64 i = 0; i < 32; i++ {
+        sum = sum + (b[i] as I64);
+    }
+    "sum %d\n", sum;
+    return 0;
+}

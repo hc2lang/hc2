@@ -64,7 +64,11 @@ U8* alloc(I64 n) {
     if h != 0 {
         I64* w = sys.from_raw(h, 16) as I64*;
         _free[c] = w[0];
-        return sys.from_raw(h + 16, n);
+        U8* p = sys.from_raw(h + 16, n);
+        for I64 i = 0; i < n; i++ {
+            p[i] = 0 as U8;
+        }
+        return p;
     }
     I64 need = _block_size(c);
     if _cur + need > _end {
