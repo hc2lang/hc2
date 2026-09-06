@@ -12,3 +12,15 @@ unsafe union _Cap {
     _CapWords w;
     U8* p;
 }
+
+U0 _guard_bytes(U8* buf) {
+    if buf.gen == 0 {
+        return;
+    }
+    I64* h = from_raw(buf.hdr, 16) as I64*;
+    if (h[0] >> 32) != 0 {
+        U8* m = "sys: trap: store into a capability\n";
+        write(2, m);
+        exit(134);
+    }
+}

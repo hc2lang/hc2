@@ -111,7 +111,7 @@ U0 free(U8* p) {
     if p.hdr < _end - _size() || p.hdr >= _cur {
         return;
     }
-    I64 c = _class(h[0]);
+    I64 c = _class(h[0] & 4294967295);
     h[0] = _free[c];
     _free[c] = p.hdr;
 }

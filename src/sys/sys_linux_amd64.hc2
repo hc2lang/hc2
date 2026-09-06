@@ -119,6 +119,7 @@ I64 close(I64 fd) {
 }
 
 I64 read(I64 fd, U8* buf) {
+    _guard_bytes(buf);
     return _sys3(SYS_READ, fd, buf.addr, buf.len);
 }
 
@@ -127,6 +128,7 @@ I64 write(I64 fd, U8* buf) {
 }
 
 I64 getdents(I64 fd, U8* buf) {
+    _guard_bytes(buf);
     return _sys3(SYS_GETDENTS64, fd, buf.addr, buf.len);
 }
 
@@ -162,6 +164,7 @@ I64 rmdir(U8* path) {
 }
 
 I64 self_path(U8* buf) {
+    _guard_bytes(buf);
     U8* exe = "/proc/self/exe";
     return _sys3(SYS_READLINK, exe.addr, buf.addr, buf.len);
 }
