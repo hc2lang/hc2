@@ -1,0 +1,2 @@
+scalar ok
+tests/101_rt_capstore.hc2:17: trap: store into a capability
