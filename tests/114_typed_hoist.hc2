@@ -1,0 +1,22 @@
+// a hoisted byte-write loop over a typed block falls back to per-store checks
+import "heap";
+
+struct Pt {
+    I64 x;
+    U8* name;
+}
+
+I32 main() {
+    U8* mem = heap.alloc(sizeof(Pt));
+    Pt* q = mem as Pt*;
+    q.name = "hi";
+    for I64 i = 0; i < 8; i++ {
+        mem[i] = 0;
+    }
+    "scalars ok\n";
+    for I64 i = 0; i < 40; i++ {
+        mem[i] = 0;
+    }
+    "unreachable\n";
+    return 0;
+}

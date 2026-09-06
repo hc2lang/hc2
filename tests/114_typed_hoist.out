@@ -1,0 +1,2 @@
+scalars ok
+tests/114_typed_hoist.hc2:18: trap: store into a capability
