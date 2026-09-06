@@ -1,0 +1,1 @@
+tests/106_capstore_bytes.hc2:12: trap: store into a capability

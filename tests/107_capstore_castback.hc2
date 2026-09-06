@@ -1,0 +1,15 @@
+import "heap";
+
+struct Pt {
+    I64 x;
+    U8* name;
+}
+
+I32 main() {
+    Pt* q = heap.alloc(sizeof(Pt)) as Pt*;
+    q.name = "hi";
+    U8* raw = q as U8*;
+    raw[8] = 1;
+    "%s\n", q.name;
+    return 0;
+}

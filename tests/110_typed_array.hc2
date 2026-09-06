@@ -1,0 +1,18 @@
+import "heap";
+
+struct Pt {
+    I64 x;
+    U8* name;
+}
+
+I32 main() {
+    U8* mem = heap.alloc(4 * sizeof(Pt));
+    Pt* ps = mem as Pt*;
+    Pt* third = ps + 2;
+    third.name = "c";
+    mem[80] = 9;
+    "%d %s\n", third.x, third.name;
+    mem[88] = 9;
+    "unreachable\n";
+    return 0;
+}

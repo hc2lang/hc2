@@ -555,6 +555,11 @@ U0 chkderef(gen.Em* e, I64 n, I64 size, I64 wr) {
     I64 fb = 0;
     I64 fg = 0;
     I64 fp = 0;
+    I64 ft = 0;
+    Bool needt = wr != 0 && needb != 0 && gen.access_ptee_has_caps(e, n) == false;
+    if needt {
+        ft = gen.newlabel(e);
+    }
     if needb != 0 {
         fb = gen.newlabel(e);
     }
@@ -589,6 +594,11 @@ U0 chkderef(gen.Em* e, I64 n, I64 size, I64 wr) {
         gen.lbl(e, fp);
         gen.out(e, "\n");
     }
+    if needt {
+        gen.out(e, "  ldr x9, [x10]\n  lsr x9, x9, #32\n  cbnz x9, ");
+        gen.lbl(e, ft);
+        gen.out(e, "\n");
+    }
     gen.out(e, "  b ");
     gen.lbl(e, ok);
     gen.out(e, "\n");
@@ -600,6 +610,17 @@ U0 chkderef(gen.Em* e, I64 n, I64 size, I64 wr) {
     }
     if needw != 0 {
         trap_arm(e, fp, pre, rt.TK_PERM);
+    }
+    if needt {
+        gen.lbl(e, ft);
+        gen.out(e, ":\n  ldr x9, [x10]\n  ldr x11, [sp]\n  sub x11, x11, x10\n  sub x11, x11, #16\n");
+        gen.out(e, "  mov x12, x9\n  mov x13, x11\n");
+        push_lit(e, pre);
+        gen.out(e, "  str x12, [sp, #-16]!\n  str x13, [sp, #-16]!\n");
+        movi(e, "x9", size);
+        gen.out(e, "  str x9, [sp, #-16]!\n  bl rt.hc2_capstore\n  add sp, sp, #80\n  b ");
+        gen.lbl(e, ok);
+        gen.out(e, "\n");
     }
     gen.lbl(e, ok);
     gen.out(e, ":\n");
@@ -737,6 +758,11 @@ U0 hoist_guard(gen.Em* e, I64 n, I64 lslow) {
     gen.out(e, "\n  ldr x12, [x15, #24]\n  ldr x13, [x11, #8]\n  cmp x12, x13\n  b.ne ");
     gen.lbl(e, lslow);
     gen.out(e, "\n");
+    if o.hw[n] != 0 {
+        gen.out(e, "  ldr x9, [x11]\n  lsr x9, x9, #32\n  cbnz x9, ");
+        gen.lbl(e, lslow);
+        gen.out(e, "\n");
+    }
     ld_loc(e, o.hi[n], "x9");
     gen.out(e, "  cmp x9, #0\n  b.lt ");
     gen.lbl(e, lslow);
