@@ -1,29 +1,39 @@
 # The hc2 Programming Language
 
-hc2 is a memory-safe systems language. Every pointer is a capability checked
-at run time — no garbage collector, no borrow checker — and a violation stops
-the program instead of corrupting it.
+hc2 is a small systems language that looks and feels like C, except that
+pointers are checked when you use them. Going out of bounds or touching
+freed memory stops the program with an error instead of corrupting it.
+The cost is a few extra instructions per access.
 
-The compiler is written in hc2 and compiles itself. It has no dependencies —
-its own assembler and linker are inside — and it emits static ELF for
-`linux/amd64` and `linux/arm64`, and self-signed Mach-O for `macos/arm64`.
+A pointer knows its bounds, whether it's writable, and which allocation it belongs to. 
+There's no GC, no borrow checker, and nothing to annotate.
+
+Targets linux/amd64, linux/arm64, and macos/arm64.
 
 ```hc2
-import "sys";
 import "heap";
 
 I32 main() {
-    U8* buf = heap.alloc(4096);
-    defer heap.free(buf);              // runs at end of block
+    U8* buf = heap.alloc(16);
+    buf[0] = 'h'; buf[1] = 'i';
+    "%s in a %d-byte buffer\n", buf[0 : 2], buf.len;
 
-    I64 n = sys.read(0, buf);          // raw syscall — no libc anywhere
-    U8* line = buf[0 : n];             // slice: same memory, narrower window
-    "read %d bytes: %s", line.len, line;   // print is a statement; %s needs no NUL
-
-    line[n] = 0;                       // one byte past the window
+    U8* alias = buf;
+    heap.free(buf);
+    "%c\n", alias[0];             // runtime error
     return 0;
 }
 ```
+
+```
+hi in a 16-byte buffer
+main.hc2:10: trap: use after free
+```
+
+### Documentation
+
+- **[docs/docs.md](docs/docs.md)** — English (automatic translation)
+- **[docs/docs-ja.md](docs/docs-ja.md)** — 日本語 (original)
 
 ### Install
 
@@ -59,16 +69,10 @@ hc2 build [-o out] [-target p] [dir]   compile a package tree, rebuilding what c
 hc2 clean [dir]                        drop that project's build cache
 ```
 
-A program is a directory — all its `.hc2` files form one package. `import
+A program is a directory, all its `.hc2` files form one package. `import
 "path"` names a directory relative to the project root (the nearest directory
 at or above the built one holding an `hc2.root` file); what the project does
 not have is taken from the language root beside the compiler binary.
-Cross-compiling is one flag: `-target linux/arm64`. `hc2 help` prints the
-rest.
-
-### Documentation
-
-**[docs/docs-ja.md](docs/docs-ja.md)** (Japanese)
 
 ### Contributing
 
