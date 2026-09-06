@@ -267,3 +267,44 @@ U0 emit_desc_sym(Em* e, I64 sid) {
 Bool in_unit(Em* e, I64 d) {
     return e.c.only < 0 || ast.node_pkg(e.t, d) == e.c.only;
 }
+I64 count_descs(Em* e) {
+    ast.Ast* t = e.t;
+    I64 n = 0;
+    for I64 d = t.top; d != 0; d = ast.nnext(t, d) {
+        if ast.nkind(t, d) == ast.ND_SDEF && ast.nop(t, d) != ast.SDEF_UNION && in_unit(e, d) {
+            if struct_has_caps(e, d) {
+                n = n + 1;
+            }
+        }
+    }
+    return n;
+}
+U0 emit_descs(Em* e) {
+    ast.Ast* t = e.t;
+    for I64 d = t.top; d != 0; d = ast.nnext(t, d) {
+        if ast.nkind(t, d) == ast.ND_SDEF && ast.nop(t, d) != ast.SDEF_UNION && in_unit(e, d) {
+            if struct_has_caps(e, d) {
+                I64 ncap = struct_ncaps(e, d);
+                out(e, ".balign 16\n  .quad ");
+                outi(e, (2 + ncap) * 8);
+                out(e, "\n  .quad 0\n.globl ");
+                emit_desc_sym(e, d);
+                out(e, "\n");
+                emit_desc_sym(e, d);
+                out(e, ":\n  .quad ");
+                outi(e, ast.ng(t, d, ast.SDEF_SIZE));
+                out(e, "\n  .quad ");
+                outi(e, ncap);
+                out(e, "\n");
+                for I64 f = ast.nb(t, d); f != 0; f = ast.nnext(t, f) {
+                    I64 cls = check.tp_cls(check.resolve_dty(e.c, f));
+                    if cls == ast.CLS_SCALARP || cls == ast.CLS_STRUCTP {
+                        out(e, "  .quad ");
+                        outi(e, ast.ng(t, f, ast.FDEF_OFF));
+                        out(e, "\n");
+                    }
+                }
+            }
+        }
+    }
+}
