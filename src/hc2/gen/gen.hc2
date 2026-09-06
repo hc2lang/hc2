@@ -239,3 +239,31 @@ U0 emit_sym(Em* e, I64 f) {
     }
     out(e, ast.nname(t, f));
 }
+Bool struct_has_caps(Em* e, I64 sid) {
+    ast.Ast* t = e.t;
+    for I64 f = ast.nb(t, sid); f != 0; f = ast.nnext(t, f) {
+        I64 cls = check.tp_cls(check.resolve_dty(e.c, f));
+        if cls == ast.CLS_SCALARP || cls == ast.CLS_STRUCTP {
+            return true;
+        }
+    }
+    return false;
+}
+I64 struct_ncaps(Em* e, I64 sid) {
+    ast.Ast* t = e.t;
+    I64 n = 0;
+    for I64 f = ast.nb(t, sid); f != 0; f = ast.nnext(t, f) {
+        I64 cls = check.tp_cls(check.resolve_dty(e.c, f));
+        if cls == ast.CLS_SCALARP || cls == ast.CLS_STRUCTP {
+            n = n + 1;
+        }
+    }
+    return n;
+}
+U0 emit_desc_sym(Em* e, I64 sid) {
+    emit_sym(e, sid);
+    out(e, ".caps");
+}
+Bool in_unit(Em* e, I64 d) {
+    return e.c.only < 0 || ast.node_pkg(e.t, d) == e.c.only;
+}

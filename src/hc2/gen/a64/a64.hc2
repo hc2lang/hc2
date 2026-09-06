@@ -2144,7 +2144,15 @@ U0 gen_unit(gen.Em* e) {
             }
         }
     }
-    if e.nstr > 0 || ntab > 0 || e.nsw > 0 {
+    I64 ndesc = 0;
+    for I64 d = t.top; d != 0; d = ast.nnext(t, d) {
+        if ast.nkind(t, d) == ast.ND_SDEF && ast.nop(t, d) != ast.SDEF_UNION && gen.in_unit(e, d) {
+            if gen.struct_has_caps(e, d) {
+                ndesc = ndesc + 1;
+            }
+        }
+    }
+    if e.nstr > 0 || ntab > 0 || e.nsw > 0 || ndesc > 0 {
         gen.out(e, "\n.section .rodata\n");
     }
     for I64 d = t.top; d != 0; d = ast.nnext(t, d) {
@@ -2165,6 +2173,32 @@ U0 gen_unit(gen.Em* e) {
             gen.out(e, "  .quad .Lt");
             gen.outi(e, e.swtab[e.swpos[i] + j]);
             gen.out(e, "\n");
+        }
+    }
+    for I64 d = t.top; d != 0; d = ast.nnext(t, d) {
+        if ast.nkind(t, d) == ast.ND_SDEF && ast.nop(t, d) != ast.SDEF_UNION && gen.in_unit(e, d) {
+            if gen.struct_has_caps(e, d) {
+                I64 ncap = gen.struct_ncaps(e, d);
+                gen.out(e, ".balign 16\n  .quad ");
+                gen.outi(e, (2 + ncap) * 8);
+                gen.out(e, "\n  .quad 0\n.globl ");
+                gen.emit_desc_sym(e, d);
+                gen.out(e, "\n");
+                gen.emit_desc_sym(e, d);
+                gen.out(e, ":\n  .quad ");
+                gen.outi(e, ast.ng(t, d, ast.SDEF_SIZE));
+                gen.out(e, "\n  .quad ");
+                gen.outi(e, ncap);
+                gen.out(e, "\n");
+                for I64 f = ast.nb(t, d); f != 0; f = ast.nnext(t, f) {
+                    I64 cls = check.tp_cls(check.resolve_dty(e.c, f));
+                    if cls == ast.CLS_SCALARP || cls == ast.CLS_STRUCTP {
+                        gen.out(e, "  .quad ");
+                        gen.outi(e, ast.ng(t, f, ast.FDEF_OFF));
+                        gen.out(e, "\n");
+                    }
+                }
+            }
         }
     }
     for I64 i = 0; i < e.nstr; i++ {
