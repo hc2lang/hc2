@@ -1,8 +1,7 @@
 # The hc2 Programming Language
 
-hc2 is a small systems language that looks and feels like C, except that
-pointers are checked when you use them. Going out of bounds or touching
-freed memory stops the program with an error instead of corrupting it.
+hc2 is a small systems language that looks and feels like C, except that pointers are checked at runtime.
+Going out of bounds or touching freed memory stops the program with an error instead of corrupting it.
 The cost is a few extra instructions per access.
 
 A pointer knows its bounds, whether it's writable, and which allocation it belongs to. 
@@ -20,7 +19,7 @@ I32 main() {
 
     U8* alias = buf;
     heap.free(buf);
-    "%c\n", alias[0];             // runtime error
+    "%c\n", alias[0]; // runtime error
     return 0;
 }
 ```
