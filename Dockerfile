@@ -22,7 +22,7 @@ RUN set -eux; \
 
 FROM --platform=${TARGET} gcc:14
 LABEL org.opencontainers.image.title="hc2" \
-      org.opencontainers.image.description="A memory-safe systems language for the next TempleOS"
+      org.opencontainers.image.description="The HC2 programming language"
 
 ARG TARGET
 COPY --from=build /tmp/hc2c /usr/local/lib/hc2/bin/hc2
