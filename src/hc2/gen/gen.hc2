@@ -241,6 +241,9 @@ U0 emit_sym(Em* e, I64 f) {
 }
 Bool struct_has_caps(Em* e, I64 sid) {
     ast.Ast* t = e.t;
+    if ast.nop(t, sid) == ast.SDEF_UNION {
+        return false;
+    }
     for I64 f = ast.nb(t, sid); f != 0; f = ast.nnext(t, f) {
         I64 cls = check.tp_cls(check.resolve_dty(e.c, f));
         if cls == ast.CLS_SCALARP || cls == ast.CLS_STRUCTP {

@@ -1,0 +1,24 @@
+// a block typed mid-loop (by a call in the loop body) must still trap byte writes into caps
+import "heap";
+
+struct Pt {
+    I64 x;
+    U8* name;
+}
+
+U8 tick(U8* m, I64 i) {
+    if i == 0 {
+        Pt* q = m as Pt*;
+        q.name = "hi";
+    }
+    return 0 as U8;
+}
+
+I32 main() {
+    U8* mem = heap.alloc(sizeof(Pt));
+    for I64 i = 0; i < 40; i++ {
+        mem[i] = tick(mem, i);
+    }
+    "unreachable\n";
+    return 0;
+}

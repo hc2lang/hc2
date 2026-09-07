@@ -1,0 +1,16 @@
+// the optimizer's write window must be reset across a typing cast
+import "heap";
+
+struct Pt {
+    I64 x;
+    U8* name;
+}
+
+I32 main() {
+    U8* mem = heap.alloc(sizeof(Pt));
+    mem[24] = 7;
+    Pt* q = mem as Pt*;
+    mem[24] = 9;
+    "unreachable\n";
+    return 0;
+}

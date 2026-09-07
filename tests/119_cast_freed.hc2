@@ -1,0 +1,15 @@
+// casting a stale (freed) pointer to a capability type traps use after free
+import "heap";
+
+struct Pt {
+    I64 x;
+    U8* name;
+}
+
+I32 main() {
+    U8* mem = heap.alloc(sizeof(Pt));
+    heap.free(mem);
+    Pt* q = mem as Pt*;
+    "unreachable\n";
+    return 0;
+}

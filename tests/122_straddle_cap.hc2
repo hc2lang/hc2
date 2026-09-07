@@ -1,0 +1,16 @@
+// a wide store that straddles an element boundary into the next element's cap traps
+import "heap";
+
+struct Qt {
+    U8* name;
+    I64 x;
+}
+
+I32 main() {
+    U8* mem = heap.alloc(2 * sizeof(Qt));
+    Qt* ps = mem as Qt*;
+    I64* iv = (mem + 36) as I64*;
+    iv[0] = 9;
+    "unreachable\n";
+    return 0;
+}

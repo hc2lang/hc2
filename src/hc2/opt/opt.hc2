@@ -472,7 +472,14 @@ U0 _wvisit(Op* o, I64 n, I64 mk) {
         || k == ast.ND_BREAK || k == ast.ND_CONT || k == ast.ND_FALLT {
         return;
     }
-    if k == ast.ND_NEG || k == ast.ND_AS || k == ast.ND_EXPR || k == ast.ND_RETURN {
+    if k == ast.ND_AS {
+        _wvisit(o, ast.na(t, n), mk);
+        if check.tp_cls(check.get_ty(o.c, n)) == ast.CLS_STRUCTP {
+            _wreset(o);
+        }
+        return;
+    }
+    if k == ast.ND_NEG || k == ast.ND_EXPR || k == ast.ND_RETURN {
         _wvisit(o, ast.na(t, n), mk);
         return;
     }

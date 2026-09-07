@@ -318,14 +318,17 @@ Three kinds of cast exist.
 - Pointer and integer do not convert in either direction. The only way to make a pointer from an address is `sys.from_raw`.
 
 A pointer cast to a struct that holds capabilities (`mem as Pt*`) has conditions.
-It must be a heap block, writable, at the block's start or at a multiple of `sizeof(Pt)`,
+The block must have a non-zero generation and be writable — this covers blocks from `heap.alloc`
+as well as blocks minted with `sys.from_raw`, but not stack locals, whose generation is always zero —
+at the block's start or at a multiple of `sizeof(Pt)`,
 and the block must not yet hold a type, or must already hold the same one. At the moment of the cast
 the block becomes typed for `Pt`, and its capability fields are zeroed (null). From then on,
 writing byte by byte into that block's capability region — with `U8*`, for instance — is a runtime error.
 The scalar fields' region can still be written.
 
-Conversely, only a heap block can view a struct that holds capabilities as `U8*`;
-viewing a stack struct as bytes, as in `&s as U8*`, is a runtime error.
+Conversely, a struct that holds capabilities cannot be viewed as bytes.
+Viewing a single stack struct as bytes, as in `&s as U8*`, is a runtime error,
+and taking `&arr` of an array of such structs is a compile error.
 
 Numeric literals and constants such as `sizeof(...)` are untyped constants: they have no type of their own.
 They take the type of the assignment target or the other operand, and a value that does not fit that type is a compile error.
