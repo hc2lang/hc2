@@ -317,6 +317,14 @@ Three kinds of cast exist.
 - Pointer to a pointer of another type. This is how the `U8*` from `heap.alloc` becomes a struct pointer.
 - Pointer and integer do not convert in either direction. The only way to make a pointer from an address is `sys.from_raw`.
 
+A cast to a struct that holds capabilities (`mem as Pt*`) makes the block a `Pt` block.
+Only heap blocks can be cast this way, and a block can hold one type.
+At the cast the capability fields become null; from then on, writing bytes into that block's
+capability region through a `U8*` or similar is a runtime error. The scalar fields' region stays writable.
+
+Stack structs are outside this mechanism, so a struct that holds capabilities cannot be viewed
+as bytes with `&s as U8*`.
+
 Numeric literals and constants such as `sizeof(...)` are untyped constants: they have no type of their own.
 They take the type of the assignment target or the other operand, and a value that does not fit that type is a compile error.
 
@@ -729,8 +737,7 @@ import "heap";
 | `I64 mark()` | record the current allocation position |
 | `U0 release(I64 m)` | free everything allocated since `mark` at once |
 
-Memory from `alloc` is zero-filled when it is freshly allocated, but keeps its previous contents
-when a freed block is reused. Running out of memory is a runtime error.
+Memory from `alloc` is always zero-filled. Running out of memory is a runtime error.
 
 ### free and revocation
 
@@ -767,6 +774,10 @@ for I64 i = 0; i < 4000; i++ {
     heap.release(m);         // free everything allocated since the mark
 }
 ```
+
+A slice cut from an arena can become a struct pointer only if that struct holds no capabilities.
+A struct with a `U8*` field, or a field that points to another struct, must be allocated one at a time
+with `heap.alloc`, or allocated as an array of that same type.
 
 ### Minting capabilities with sys.from_raw
 
@@ -806,6 +817,11 @@ Stopping on the spot is the design; continuing in a corrupted state is not.
 | `call through null` | calling a null function pointer |
 | `not a function of this type` | the function pointer's type does not match the call |
 | `print of null` | printing a null pointer with `%s` |
+| `store into a capability` | a byte-by-byte write into a typed block's capability region, including writes made by a system call |
+| `cast to a type with capabilities needs a writable heap block` | casting a literal, the stack, or a read-only block to a struct that holds capabilities |
+| `block already holds another type` | a block already cast to a different struct that holds capabilities |
+| `cast not at an element boundary` | casting a slice at a position that is not a multiple of `sizeof` to a struct that holds capabilities |
+| `a stack struct with capabilities cannot be viewed as bytes` | casting a stack struct that holds capabilities to `U8*` or similar |
 
 ## Runtime
 

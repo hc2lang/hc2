@@ -1,0 +1,26 @@
+// bytes assembled before the cast are wiped when the block takes its type
+import "heap";
+
+struct Pt {
+    I64 x;
+    U8* name;
+}
+
+I32 main() {
+    U8* mem = heap.alloc(sizeof(Pt));
+    U8* real = heap.alloc(4);
+    U8* view = heap.alloc(sizeof(Pt));
+    Pt* w = view as Pt*;
+    w.name = real;
+    for I64 i = 0; i < 40; i++ {
+        mem[i] = view[i];
+    }
+    mem[28] = 0xff; mem[29] = 0xff; mem[30] = 0xff; mem[31] = 0x7f;
+    Pt* q = mem as Pt*;
+    if q.name == null {
+        "null\n";
+        return 0;
+    }
+    "forged %d\n", q.name.len;
+    return 1;
+}

@@ -232,6 +232,11 @@ U0 chkderef(gen.Em* e, I64 n, I64 size, I64 wr) {
     I64 fb = 0;
     I64 fg = 0;
     I64 fp = 0;
+    I64 ft = 0;
+    Bool needt = wr != 0 && (needb != 0 || needg != 0) && gen.access_ptee_has_caps(e, n) == false;
+    if needt {
+        ft = gen.newlabel(e);
+    }
     if needb != 0 {
         fb = gen.newlabel(e);
     }
@@ -265,6 +270,11 @@ U0 chkderef(gen.Em* e, I64 n, I64 size, I64 wr) {
         gen.lbl(e, fp);
         gen.out(e, "\n");
     }
+    if needt {
+        gen.out(e, "  mov r9, [rdx]\n  shr r9, 32\n  jnz ");
+        gen.lbl(e, ft);
+        gen.out(e, "\n");
+    }
     gen.out(e, "  jmp ");
     gen.lbl(e, ok);
     gen.out(e, "\n");
@@ -276,6 +286,16 @@ U0 chkderef(gen.Em* e, I64 n, I64 size, I64 wr) {
     }
     if needw != 0 {
         trap_arm(e, fp, pre, rt.TK_PERM);
+    }
+    if needt {
+        gen.lbl(e, ft);
+        gen.out(e, ":\n  mov r9, [rdx]\n  mov r10, [rsp]\n  sub r10, rdx\n  sub r10, 16\n");
+        push_lit(e, pre);
+        gen.out(e, "  push r9\n  push r10\n  push ");
+        gen.outi(e, size);
+        gen.out(e, "\n  call rt.hc2_capstore\n  add rsp, 40\n  jmp ");
+        gen.lbl(e, ok);
+        gen.out(e, "\n");
     }
     gen.lbl(e, ok);
     gen.out(e, ":\n");
@@ -431,7 +451,13 @@ U0 hoist_guard(gen.Em* e, I64 n, I64 lslow) {
     gen.outi(e, aoff - 24);
     gen.out(e, "]\n  cmp r9, [rcx + 8]\n  jne ");
     gen.lbl(e, lslow);
-    gen.out(e, "\n  mov rax, ");
+    gen.out(e, "\n");
+    if o.hw[n] != 0 {
+        gen.out(e, "  mov r9, [rcx]\n  shr r9, 32\n  jnz ");
+        gen.lbl(e, lslow);
+        gen.out(e, "\n");
+    }
+    gen.out(e, "  mov rax, ");
     out_loc(e, o.hi[n]);
     gen.out(e, "\n  test rax, rax\n  js ");
     gen.lbl(e, lslow);
@@ -954,6 +980,48 @@ U0 gen_expr(gen.Em* e, I64 n) {
         case ast.ND_AS:
             I64 hk = check.tp_kind(check.get_ty(e.c, ast.na(t, n)));
             gen_expr(e, ast.na(t, n));
+            I64 hty = check.get_ty(e.c, ast.na(t, n));
+            Bool from_caps = check.tp_cls(hty) == ast.CLS_STRUCTP && gen.struct_has_caps(e, check.tp_sid(hty));
+            Bool to_caps = check.tp_cls(ty) == ast.CLS_STRUCTP && gen.struct_has_caps(e, check.tp_sid(ty));
+            if to_caps {
+                I64 pre = gen.pool_site(e, n);
+                I64 ok = gen.newlabel(e);
+                I64 fg = gen.newlabel(e);
+                gen.out(e, "  mov rdx, [rsp + 8]\n  mov rcx, rdx\n  and rcx, -2\n  test rcx, rcx\n  jz ");
+                gen.lbl(e, ok);
+                gen.out(e, "\n  mov r8d, [rsp + 16]\n  mov r9, [rcx]\n  mov r10, [rcx + 8]\n");
+                gen.out(e, "  mov rax, [rsp + 24]\n  cmp rax, r10\n  jne ");
+                gen.lbl(e, fg);
+                gen.out(e, "\n  lea r11, [rip + ");
+                gen.emit_desc_sym(e, check.tp_sid(ty));
+                gen.out(e, "]\n  lea rax, [rip + rt.hc2_anchor]\n  sub r11, rax\n");
+                push_lit(e, pre);
+                gen.out(e, "  push rdx\n  push r8\n  push r9\n  push r10\n  push r11\n");
+                gen.out(e, "  call rt.hc2_typed\n  add rsp, 56\n");
+                gen.out(e, "  mov rcx, [rsp + 8]\n  and rcx, -2\n  mov [rcx], rax\n  jmp ");
+                gen.lbl(e, ok);
+                gen.out(e, "\n");
+                trap_arm(e, fg, pre, rt.TK_GEN);
+                gen.lbl(e, ok);
+                gen.out(e, ":\n");
+                return;
+            }
+            if from_caps && check.tp_isptr(ty) && to_caps == false {
+                I64 pre = gen.pool_site(e, n);
+                I64 ok = gen.newlabel(e);
+                I64 fb = gen.newlabel(e);
+                gen.out(e, "  mov rcx, [rsp + 8]\n  and rcx, -2\n  test rcx, rcx\n  jz ");
+                gen.lbl(e, ok);
+                gen.out(e, "\n  cmp qword ptr [rcx + 8], 0\n  je ");
+                gen.lbl(e, fb);
+                gen.out(e, "\n  jmp ");
+                gen.lbl(e, ok);
+                gen.out(e, "\n");
+                trap_arm(e, fb, pre, rt.TK_BYTEVIEW);
+                gen.lbl(e, ok);
+                gen.out(e, ":\n");
+                return;
+            }
             if check.tp_cls(ty) == ast.CLS_SCALAR {
                 I64 wk = check.tp_kind(ty);
                 if wk == ast.SK_F64 && hk != ast.SK_F64 {
@@ -1919,7 +1987,8 @@ U0 gen_unit(gen.Em* e) {
             }
         }
     }
-    if e.nstr > 0 || ntab > 0 || e.nsw > 0 {
+    I64 ndesc = gen.count_descs(e);
+    if e.nstr > 0 || ntab > 0 || e.nsw > 0 || ndesc > 0 {
         gen.out(e, "\n.section .rodata\n");
     }
     for I64 d = t.top; d != 0; d = ast.nnext(t, d) {
@@ -1942,6 +2011,7 @@ U0 gen_unit(gen.Em* e) {
             gen.out(e, "\n");
         }
     }
+    gen.emit_descs(e);
     for I64 i = 0; i < e.nstr; i++ {
         gen.out(e, ".balign 16\n.Lhdr");
         gen.outi(e, i);

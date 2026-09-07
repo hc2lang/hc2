@@ -1,0 +1,11 @@
+struct Pt {
+    I64 x;
+    U8* name;
+}
+
+I32 main() {
+    U8* lit = "0123456789012345678901234567890123456789";
+    Pt* q = lit as Pt*;
+    "%d\n", q.name.len;
+    return 0;
+}

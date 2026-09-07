@@ -1,0 +1,1 @@
+tests/119_cast_freed.hc2:12: trap: use after free

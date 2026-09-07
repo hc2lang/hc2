@@ -1,0 +1,20 @@
+// hc2_capstore reads a descriptor {size, ncap, offsets...} laid out like the
+// compiler emits it: a {bytes, 0} header, then the words. Here it is a global
+// table, so the header is the one the compiler writes before every table.
+// rt.hc2_anchor_addr() stands in for &rt.hc2_anchor, which hc2's & rejects
+// (it only takes a local, a same-file global, or an imported function).
+import "rt";
+
+I64 desc[4] = {40, 1, 8, 0};
+
+I32 main() {
+    I64* dp = &desc;
+    I64 id = dp.addr - rt.hc2_anchor_addr();
+    I64 lenword = 40 | (id << 32);
+    U8* site = "tests/101_rt_capstore.hc2:17: trap: ";
+    rt.hc2_capstore(site.addr, site.len, lenword, 0, 8);
+    "scalar ok\n";
+    rt.hc2_capstore(site.addr, site.len, lenword, 4, 8);
+    "unreachable\n";
+    return 0;
+}

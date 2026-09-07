@@ -1,0 +1,14 @@
+// & of a stack array of capability-holding structs is rejected in the subset
+struct Pt {
+    I64 x;
+    U8* name;
+}
+
+I32 main() {
+    Pt arr[2] = {};
+    arr[0].name = "hello";
+    U8* raw = &arr as U8*;
+    raw[31] = 0x7f;
+    "unreachable\n";
+    return 0;
+}

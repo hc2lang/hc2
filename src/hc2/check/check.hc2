@@ -36,6 +36,16 @@ Bool tp_isptr(I64 x) {
     return c == ast.CLS_SCALARP || c == ast.CLS_STRUCTP;
 }
 
+Bool _struct_has_cap(Ck* c, I64 sid) {
+    ast.Ast* t = c.t;
+    for I64 f = ast.nb(t, sid); f != 0; f = ast.nnext(t, f) {
+        if tp_isptr(resolve_dty(c, f)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 U8* sk_name(I64 k) {
     switch k {
         case ast.SK_U0:   return "U0";
@@ -1209,6 +1219,9 @@ I64 chk_expr(Ck* c, I64 n) {
             ast.ns(t, n, ast.ADDR_OFF, l.off);
             I64 ty = 0;
             if l.alen >= 0 {
+                if l.cls == ast.CLS_STRUCT && _struct_has_cap(c, l.sid) {
+                    cerr(c, n, "& of an array of structs with capabilities is not in the subset");
+                }
                 ast.ns(t, n, ast.ADDR_LEN, l.alen * tp_size(c, tpack(l.cls, l.kind, l.sid)));
                 ty = tpack(ast.CLS_SCALARP, l.kind, -1);
             } else if l.cls == ast.CLS_STRUCT {

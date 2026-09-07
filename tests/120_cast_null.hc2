@@ -1,0 +1,14 @@
+// casting null to or from a capability-holding struct pointer is a no-op
+struct Pt {
+    I64 x;
+    U8* name;
+}
+
+I32 main() {
+    U8* p = null;
+    Pt* q = p as Pt*;
+    Pt* r = null;
+    U8* s = r as U8*;
+    "ok\n";
+    return 0;
+}

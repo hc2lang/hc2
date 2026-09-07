@@ -431,7 +431,9 @@ I32 build(U8* cachedir, U8* outpath, U8* root) {
         I64 fd = sys.open(path);
         if fd >= 0 {
             sys.close(fd);
-            asm.obj_append(link, readfile(path));
+            U8* got = readfile(path);
+            asm.obj_append(link, got);
+            heap.free(got);
             reused = reused + 1;
         } else {
             c.only = p;
@@ -446,6 +448,7 @@ I32 build(U8* cachedir, U8* outpath, U8* root) {
             U8* obj = asm.obj_write(one);
             write_out(path, obj);
             asm.obj_append(link, obj);
+            heap.free(obj);
             built = built + 1;
         }
     }

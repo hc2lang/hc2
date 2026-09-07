@@ -1,0 +1,2 @@
+9 c
+tests/110_typed_array.hc2:15: trap: store into a capability

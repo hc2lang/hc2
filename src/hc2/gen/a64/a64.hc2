@@ -376,6 +376,20 @@ U0 lea_sym(gen.Em* e, U8* r, I64 g) {
     gen.out(e, "\n");
 }
 
+U0 lea_sym_desc(gen.Em* e, U8* r, I64 sid) {
+    gen.out(e, "  adrp ");
+    gen.out(e, r);
+    gen.out(e, ", ");
+    gen.emit_desc_sym(e, sid);
+    gen.out(e, "\n  add ");
+    gen.out(e, r);
+    gen.out(e, ", ");
+    gen.out(e, r);
+    gen.out(e, ", :lo12:");
+    gen.emit_desc_sym(e, sid);
+    gen.out(e, "\n");
+}
+
 U0 lea_pool(gen.Em* e, U8* r, U8* prefix, I64 id) {
     gen.out(e, "  adrp ");
     gen.out(e, r);
@@ -541,6 +555,11 @@ U0 chkderef(gen.Em* e, I64 n, I64 size, I64 wr) {
     I64 fb = 0;
     I64 fg = 0;
     I64 fp = 0;
+    I64 ft = 0;
+    Bool needt = wr != 0 && (needb != 0 || needg != 0) && gen.access_ptee_has_caps(e, n) == false;
+    if needt {
+        ft = gen.newlabel(e);
+    }
     if needb != 0 {
         fb = gen.newlabel(e);
     }
@@ -575,6 +594,11 @@ U0 chkderef(gen.Em* e, I64 n, I64 size, I64 wr) {
         gen.lbl(e, fp);
         gen.out(e, "\n");
     }
+    if needt {
+        gen.out(e, "  ldr x9, [x10]\n  lsr x9, x9, #32\n  cbnz x9, ");
+        gen.lbl(e, ft);
+        gen.out(e, "\n");
+    }
     gen.out(e, "  b ");
     gen.lbl(e, ok);
     gen.out(e, "\n");
@@ -586,6 +610,17 @@ U0 chkderef(gen.Em* e, I64 n, I64 size, I64 wr) {
     }
     if needw != 0 {
         trap_arm(e, fp, pre, rt.TK_PERM);
+    }
+    if needt {
+        gen.lbl(e, ft);
+        gen.out(e, ":\n  ldr x9, [x10]\n  ldr x11, [sp]\n  sub x11, x11, x10\n  sub x11, x11, #16\n");
+        gen.out(e, "  mov x12, x9\n  mov x13, x11\n");
+        push_lit(e, pre);
+        gen.out(e, "  str x12, [sp, #-16]!\n  str x13, [sp, #-16]!\n");
+        movi(e, "x9", size);
+        gen.out(e, "  str x9, [sp, #-16]!\n  bl rt.hc2_capstore\n  add sp, sp, #80\n  b ");
+        gen.lbl(e, ok);
+        gen.out(e, "\n");
     }
     gen.lbl(e, ok);
     gen.out(e, ":\n");
@@ -723,6 +758,11 @@ U0 hoist_guard(gen.Em* e, I64 n, I64 lslow) {
     gen.out(e, "\n  ldr x12, [x15, #24]\n  ldr x13, [x11, #8]\n  cmp x12, x13\n  b.ne ");
     gen.lbl(e, lslow);
     gen.out(e, "\n");
+    if o.hw[n] != 0 {
+        gen.out(e, "  ldr x9, [x11]\n  lsr x9, x9, #32\n  cbnz x9, ");
+        gen.lbl(e, lslow);
+        gen.out(e, "\n");
+    }
     ld_loc(e, o.hi[n], "x9");
     gen.out(e, "  cmp x9, #0\n  b.lt ");
     gen.lbl(e, lslow);
@@ -1207,6 +1247,50 @@ U0 gen_expr(gen.Em* e, I64 n) {
         case ast.ND_AS:
             I64 hk = check.tp_kind(check.get_ty(e.c, ast.na(t, n)));
             gen_expr(e, ast.na(t, n));
+            I64 hty = check.get_ty(e.c, ast.na(t, n));
+            Bool from_caps = check.tp_cls(hty) == ast.CLS_STRUCTP && gen.struct_has_caps(e, check.tp_sid(hty));
+            Bool to_caps = check.tp_cls(ty) == ast.CLS_STRUCTP && gen.struct_has_caps(e, check.tp_sid(ty));
+            if to_caps {
+                I64 pre = gen.pool_site(e, n);
+                I64 ok = gen.newlabel(e);
+                I64 fg = gen.newlabel(e);
+                gen.out(e, "  ldr x10, [sp, #8]\n  and x11, x10, #-2\n  cbz x11, ");
+                gen.lbl(e, ok);
+                gen.out(e, "\n  ldr w12, [sp, #16]\n");
+                gen.out(e, "  ldr x13, [x11]\n  ldr x14, [x11, #8]\n");
+                gen.out(e, "  ldr x16, [sp, #24]\n  cmp x16, x14\n  b.ne ");
+                gen.lbl(e, fg);
+                gen.out(e, "\n");
+                lea_sym_desc(e, "x15", check.tp_sid(ty));
+                gen.out(e, "  adrp x9, rt.hc2_anchor\n  add x9, x9, :lo12:rt.hc2_anchor\n  sub x15, x15, x9\n");
+                push_lit(e, pre);
+                gen.out(e, "  str x10, [sp, #-16]!\n  str x12, [sp, #-16]!\n  str x13, [sp, #-16]!\n");
+                gen.out(e, "  str x14, [sp, #-16]!\n  str x15, [sp, #-16]!\n");
+                gen.out(e, "  bl rt.hc2_typed\n  add sp, sp, #112\n");
+                gen.out(e, "  ldr x11, [sp, #8]\n  and x11, x11, #-2\n  str x0, [x11]\n  b ");
+                gen.lbl(e, ok);
+                gen.out(e, "\n");
+                trap_arm(e, fg, pre, rt.TK_GEN);
+                gen.lbl(e, ok);
+                gen.out(e, ":\n");
+                return;
+            }
+            if from_caps && check.tp_isptr(ty) && to_caps == false {
+                I64 pre = gen.pool_site(e, n);
+                I64 ok = gen.newlabel(e);
+                I64 fb = gen.newlabel(e);
+                gen.out(e, "  ldr x11, [sp, #8]\n  and x11, x11, #-2\n  cbz x11, ");
+                gen.lbl(e, ok);
+                gen.out(e, "\n  ldr x12, [x11, #8]\n  cbz x12, ");
+                gen.lbl(e, fb);
+                gen.out(e, "\n  b ");
+                gen.lbl(e, ok);
+                gen.out(e, "\n");
+                trap_arm(e, fb, pre, rt.TK_BYTEVIEW);
+                gen.lbl(e, ok);
+                gen.out(e, ":\n");
+                return;
+            }
             if check.tp_cls(ty) == ast.CLS_SCALAR {
                 I64 wk = check.tp_kind(ty);
                 if wk == ast.SK_F64 && hk != ast.SK_F64 {
@@ -2144,7 +2228,8 @@ U0 gen_unit(gen.Em* e) {
             }
         }
     }
-    if e.nstr > 0 || ntab > 0 || e.nsw > 0 {
+    I64 ndesc = gen.count_descs(e);
+    if e.nstr > 0 || ntab > 0 || e.nsw > 0 || ndesc > 0 {
         gen.out(e, "\n.section .rodata\n");
     }
     for I64 d = t.top; d != 0; d = ast.nnext(t, d) {
@@ -2167,6 +2252,7 @@ U0 gen_unit(gen.Em* e) {
             gen.out(e, "\n");
         }
     }
+    gen.emit_descs(e);
     for I64 i = 0; i < e.nstr; i++ {
         gen.out(e, ".balign 16\n.Lhdr");
         gen.outi(e, i);

@@ -1,0 +1,16 @@
+import "heap";
+import "sys";
+
+struct Pt {
+    I64 x;
+    U8* name;
+}
+
+I32 main() {
+    U8* mem = heap.alloc(sizeof(Pt));
+    Pt* q = mem as Pt*;
+    q.name = "hi";
+    I64 n = sys.read(0, mem);
+    "read %d\n", n;
+    return 0;
+}

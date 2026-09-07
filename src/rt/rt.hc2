@@ -14,6 +14,11 @@ const I64 TK_IMMORTAL = 7;
 const I64 TK_NCALL    = 8;
 const I64 TK_BADFN    = 9;
 const I64 TK_NSTR     = 10;
+const I64 TK_CAPSTORE  = 11;
+const I64 TK_TYPED     = 12;
+const I64 TK_RETYPE    = 13;
+const I64 TK_UNALIGNED = 14;
+const I64 TK_BYTEVIEW  = 15;
 
 U0 hc2_trap(I64 addr, I64 len, I64 kind) {
     _fail_raw(addr, len);
@@ -28,6 +33,11 @@ U0 hc2_trap(I64 addr, I64 len, I64 kind) {
         case TK_IMMORTAL: _fail("free of immortal\n");
         case TK_NCALL:    _fail("call through null\n");
         case TK_BADFN:    _fail("not a function of this type\n");
+        case TK_CAPSTORE:  _fail("store into a capability\n");
+        case TK_TYPED:     _fail("cast to a type with capabilities needs a writable heap block\n");
+        case TK_RETYPE:    _fail("block already holds another type\n");
+        case TK_UNALIGNED: _fail("cast not at an element boundary\n");
+        case TK_BYTEVIEW:  _fail("a stack struct with capabilities cannot be viewed as bytes\n");
         default:          _fail("print of null\n");
     }
     _stop(134);
@@ -199,4 +209,102 @@ U0 hc2_print_f64(I64 v) {
         fr = fr / 10;
     }
     _emit(p[0 : 6]);
+}
+
+I64 hc2_anchor[2] = {};
+
+struct _Words {
+    I64 addr;
+    I64 hdr;
+    I64 offlen;
+    I64 gen;
+}
+
+unsafe union _Cap {
+    _Words w;
+    U8* p;
+}
+
+U8* _mint(I64 addr, I64 hdrword, I64 lo, I64 len, I64 gen) {
+    unsafe {
+        _Cap c = {};
+        c.w.addr = addr;
+        c.w.hdr = hdrword;
+        c.w.offlen = lo | (len << 32);
+        c.w.gen = gen;
+        return c.p;
+    }
+}
+
+I64 _desc_addr(I64 lenword) {
+    I64* a = &hc2_anchor;
+    return a.addr + (lenword >> 32);
+}
+
+I64* _desc(I64 lenword) {
+    I64 d = _desc_addr(lenword);
+    I64* head = _mint(d, d - 16, 0, 16, 0) as I64*;
+    I64 words = 2 + head[1];
+    return _mint(d, d - 16, 0, words * 8, 0) as I64*;
+}
+
+Bool _hits_cap(I64* desc, I64 rel, I64 width) {
+    I64 ncap = desc[1];
+    for I64 i = 0; i < ncap; i++ {
+        I64 f = desc[2 + i];
+        if rel < f + 32 && rel + width > f {
+            return true;
+        }
+    }
+    return false;
+}
+
+U0 hc2_capstore(I64 saddr, I64 slen, I64 lenword, I64 off, I64 width) {
+    if (lenword >> 32) == 0 {
+        return;
+    }
+    I64* desc = _desc(lenword);
+    I64 size = desc[0];
+    I64 rel = off % size;
+    if _hits_cap(desc, rel, width) || _hits_cap(desc, rel - size, width) {
+        hc2_trap(saddr, slen, TK_CAPSTORE);
+    }
+}
+
+I64 hc2_typed(I64 saddr, I64 slen, I64 hdrword, I64 lo, I64 lenword, I64 genword, I64 descid) {
+    if genword == 0 || (hdrword & 1) == 0 {
+        hc2_trap(saddr, slen, TK_TYPED);
+    }
+    I64 id = descid as I32 as I64;
+    I64 len = lenword & 4294967295;
+    I64 wanted = len | (id << 32);
+    I64* desc = _desc(wanted);
+    I64 size = desc[0];
+    if lo % size != 0 {
+        hc2_trap(saddr, slen, TK_UNALIGNED);
+    }
+    I64 have = lenword >> 32;
+    if have == id {
+        return lenword;
+    }
+    if have != 0 {
+        hc2_trap(saddr, slen, TK_RETYPE);
+    }
+    I64 hdr = hdrword & -2;
+    U8* data = _mint(hdr + 16, hdrword, 0, len, genword);
+    I64 ncap = desc[1];
+    for I64 base = 0; base + size <= len; base = base + size {
+        for I64 i = 0; i < ncap; i++ {
+            I64 f = base + desc[2 + i];
+            for I64 j = 0; j < 32; j++ {
+                data[f + j] = 0;
+            }
+        }
+    }
+    return wanted;
+}
+
+I64 hc2_anchor_addr() {
+    I64* a = &hc2_anchor;
+    return a.addr;
 }

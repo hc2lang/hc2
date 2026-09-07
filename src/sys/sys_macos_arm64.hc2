@@ -138,6 +138,7 @@ I64 close(I64 fd) {
 }
 
 I64 read(I64 fd, U8* buf) {
+    _guard_bytes(buf);
     return _sys3(SYS_READ, fd, buf.addr, buf.len);
 }
 
@@ -146,6 +147,7 @@ I64 write(I64 fd, U8* buf) {
 }
 
 I64 getdents(I64 fd, U8* buf) {
+    _guard_bytes(buf);
     I64 pos[1] = {};
     I64* pp = &pos;
     return _sys6(SYS_GETDIRENTRIES64, fd, buf.addr, buf.len, pp.addr, 0, 0);
@@ -183,6 +185,7 @@ I64 rmdir(U8* path) {
 }
 
 I64 self_path(U8* buf) {
+    _guard_bytes(buf);
     return -1;
 }
 

@@ -1,0 +1,21 @@
+// an unsafe union with a capability member can be cast to and used
+import "heap";
+
+struct W {
+    I64 a;
+    I64 b;
+    I64 c;
+    I64 d;
+}
+
+unsafe union U {
+    W w;
+    U8* p;
+}
+
+I32 main() {
+    U8* mem = heap.alloc(32);
+    U* u = mem as U*;
+    "ok\n";
+    return 0;
+}
