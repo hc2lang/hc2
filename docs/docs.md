@@ -69,7 +69,7 @@ main.hc2:10: trap: use after free
 - [Memory management](#memory-management)
     - [The heap package](#the-heap-package)
     - [free and revocation](#free-and-revocation)
-    - [Arenas with mark and release](#arenas-with-mark-and-release)
+    - [Arenas with slices](#arenas-with-slices)
     - [Minting capabilities with sys.from_raw](#minting-capabilities-with-sysfrom_raw)
 - [Runtime errors (traps)](#runtime-errors-traps)
 - [Runtime](#runtime)
@@ -734,8 +734,6 @@ import "heap";
 |----------|----------|
 | `U8* alloc(I64 n)` | allocate `n` bytes, writable, 16-byte aligned |
 | `U0 free(U8* p)` | free the allocation; any later access is a runtime error |
-| `I64 mark()` | record the current allocation position |
-| `U0 release(I64 m)` | free everything allocated since `mark` at once |
 
 Memory from `alloc` is always zero-filled. Running out of memory is a runtime error.
 
@@ -761,23 +759,19 @@ The following are runtime errors.
 | freeing a slice (`p[8:16]`) or an interior pointer (`p + 1`) | `heap: trap: free: not the allocation base` |
 | freeing twice | `heap: trap: double free` |
 
-### Arenas with mark and release
+### Arenas with slices
 
-To throw away a batch of temporary allocations at once, use `mark` and `release`.
-`mark` records a position; `release` rewinds to it, freeing everything allocated in between.
+To free a batch of allocations at once, `alloc` one block, hand out slices of it, and `free` the block at the end.
+`free` advances the block's generation, so every slice handed out dies with it.
 
 ```hc2
-I64 m = heap.mark();
-for I64 i = 0; i < 4000; i++ {
-    U8* p = heap.alloc(1 << 16);
-    // ... use p ...
-    heap.release(m);         // free everything allocated since the mark
-}
+U8* arena = heap.alloc(4096);
+U8* a = arena[0 : 64];
+U8* b = arena[64 : 128];
+heap.free(arena);        // from here on, a and b are runtime errors
 ```
 
-A slice cut from an arena can become a struct pointer only if that struct holds no capabilities.
-A struct with a `U8*` field, or a field that points to another struct, must be allocated one at a time
-with `heap.alloc`, or allocated as an array of that same type.
+Structs that hold capabilities cannot be carved out of a slice; `alloc` them one per block, or as an array of one type.
 
 ### Minting capabilities with sys.from_raw
 
@@ -811,7 +805,7 @@ Stopping on the spot is the design; continuing in a corrupted state is not.
 | `write to read-only` | a write through a read-only pointer (a string literal, for example) |
 | `division by zero` | `/` or `%` by zero |
 | `out of memory` | the heap is exhausted |
-| `free: not the allocation base` | `free` of anything but the pointer `alloc` returned, or an invalid `release` |
+| `free: not the allocation base` | `free` of anything but the pointer `alloc` returned |
 | `double free` | `free` of memory that is already freed |
 | `free of immortal` | `free` of a pointer to a literal, the stack, or a global |
 | `call through null` | calling a null function pointer |

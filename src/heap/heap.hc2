@@ -6,7 +6,6 @@ I64 _end = 0;
 I64 _free[32] = {};
 
 const I64 _HEAP = 256 * 1024 * 1024;
-const I64 _CLASSES = 32;
 
 I64 _base() {
     return sys.mmap(_HEAP);
@@ -48,12 +47,6 @@ I64 _block_size(I64 c) {
     return (1 << c) + 32;
 }
 
-U0 _drop_free_list() {
-    for I64 c = 0; c < _CLASSES; c++ {
-        _free[c] = 0;
-    }
-}
-
 U8* alloc(I64 n) {
     _init();
     if n < 0 {
@@ -77,20 +70,6 @@ U8* alloc(I64 n) {
     I64 base = _cur;
     _cur = _cur + need;
     return sys.from_raw(base + 32, n);
-}
-
-I64 mark() {
-    _init();
-    return _cur;
-}
-
-U0 release(I64 m) {
-    _init();
-    if m < _end - _size() || m > _cur {
-        _t(rt.TK_NOTBASE);
-    }
-    _drop_free_list();
-    _cur = m;
 }
 
 U0 free(U8* p) {

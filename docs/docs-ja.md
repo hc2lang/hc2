@@ -67,7 +67,7 @@ main.hc2:10: trap: use after free
 - [メモリ管理](#メモリ管理)
     - [heapパッケージ](#heapパッケージ)
     - [freeと失効](#freeと失効)
-    - [markとreleaseによるアリーナ](#markとreleaseによるアリーナ)
+    - [スライスによるアリーナ](#スライスによるアリーナ)
     - [sys.from_rawによるcapabilityの鋳造](#sysfrom_rawによるcapabilityの鋳造)
 - [実行時エラー（トラップ）](#実行時エラートラップ)
 - [ランタイム](#ランタイム)
@@ -732,8 +732,6 @@ import "heap";
 |----------|----------|
 | `U8* alloc(I64 n)` | `n` バイトを確保する。書き込み可、16 バイトアライン |
 | `U0 free(U8* p)` | 割り当てを解放し、以後のアクセスを実行時エラーにする |
-| `I64 mark()` | 現在の割り当て位置を記録する |
-| `U0 release(I64 m)` | `mark` 以降の割り当てをまとめて解放する |
 
 `alloc` が返すメモリは常にゼロ埋めされています。
 メモリを使い切ると実行時エラーで終了します。
@@ -760,22 +758,19 @@ U8 x = b[0];             // 実行時エラー: use after free
 | スライス（`p[8:16]`）や内部ポインタ（`p + 1`）の解放 | `heap: trap: free: not the allocation base` |
 | 二重解放 | `heap: trap: double free` |
 
-### markとreleaseによるアリーナ
+### スライスによるアリーナ
 
-一時的な割り当てをまとめて捨てたい場合は、`mark` と `release` を使います。
-`mark` で位置を記録し、`release` でそこまで巻き戻すと、その間に確保したメモリがすべて解放されます。
+まとめて解放したい割り当ては、1 つのブロックを `alloc` してスライスで配り、最後にそのブロックを `free` します。
+`free` はブロックの世代を進めるので、配ったスライスはすべてその場で失効します。
 
 ```hc2
-I64 m = heap.mark();
-for I64 i = 0; i < 4000; i++ {
-    U8* p = heap.alloc(1 << 16);
-    // ... p を使う ...
-    heap.release(m);         // ここまでの割り当てをまとめて解放する
-}
+U8* arena = heap.alloc(4096);
+U8* a = arena[0 : 64];
+U8* b = arena[64 : 128];
+heap.free(arena);        // 以後 a も b も実行時エラー
 ```
 
-arena から切り出したスライスを構造体のポインタにできるのは、その構造体が capability を含まない場合だけです。
-`U8*` や他の構造体へのポインタをフィールドに持つ構造体は、1 個ずつ `heap.alloc` するか、同じ型の配列として確保します。
+capability を含む構造体はスライスから作れません。ブロックごとに `alloc` するか、同じ型の配列として確保します。
 
 ### sys.from_rawによるcapabilityの鋳造
 
@@ -809,7 +804,7 @@ U8* p = sys.from_raw(base + 32, n);      // 検査付きポインタになる
 | `write to read-only` | 読み取り専用のポインタ（文字列リテラルなど）への書き込み |
 | `division by zero` | ゼロによる `/` または `%` |
 | `out of memory` | ヒープを使い切った |
-| `free: not the allocation base` | `alloc` が返したポインタ以外の `free`、または不正な `release` |
+| `free: not the allocation base` | `alloc` が返したポインタ以外の `free` |
 | `double free` | 解放済みのメモリを再度 `free` |
 | `free of immortal` | リテラル・スタック・グローバルを指すポインタの `free` |
 | `call through null` | null 関数ポインタの呼び出し |

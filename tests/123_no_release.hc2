@@ -1,0 +1,8 @@
+// mark/release were removed: a block is freed as a whole, slices die with it
+import "heap";
+
+I32 main() {
+    I64 m = heap.mark();
+    heap.release(m);
+    return 0;
+}
