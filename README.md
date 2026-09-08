@@ -44,14 +44,14 @@ itself:
 
 ```sh
 sh bootstrap/build.sh -v                # -> src/build/hc2c; -v verifies the fixpoint
-./src/build/hc2c build -o hc2 src/hc2   # the compiler, built by itself
+./src/build/hc2c build -o ./src/build/hc2c-v2 src/hc2   # the compiler, built by itself
 ```
 
 #### macOS (Apple Silicon)
 
 ```sh
 sh bootstrap/build.sh -v                # -> src/build/hc2c; Docker only if no seed yet
-./src/build/hc2c build -o hc2 src/hc2
+./src/build/hc2c build -o ./src/build/hc2c-v2 src/hc2
 ```
 
 #### Docker (any host, including Windows)
