@@ -21,7 +21,7 @@ I64 mkreg(I64 idx, I64 size) {
     return idx + size * 256;
 }
 
-I64 reg_idx(I64 r)  {
+I64 reg_idx(I64 r) {
     return r % 256;
 }
 

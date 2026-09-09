@@ -13,15 +13,38 @@ I64 tpack(I64 cls, I64 kind, I64 sid) {
     return cls * 100000000 + kind * 1000000 + sid + 1;
 }
 
-I64 tp_cls(I64 x)  { return x / 100000000; }
-I64 tp_kind(I64 x) { return (x / 1000000) % 100; }
-I64 tp_sid(I64 x)  { return (x % 1000000) - 1; }
-const I64 TP_NONE  = 0;
-I64 TP_U0()    { return tpack(ast.CLS_SCALAR, ast.SK_U0, -1); }
-I64 TP_BOOL()  { return tpack(ast.CLS_SCALAR, ast.SK_BOOL, -1); }
-I64 TP_I64()   { return tpack(ast.CLS_SCALAR, ast.SK_I64, -1); }
-I64 TP_F64()   { return tpack(ast.CLS_SCALAR, ast.SK_F64, -1); }
-I64 TP_U8PTR() { return tpack(ast.CLS_SCALARP, ast.SK_U8, -1); }
+I64 tp_cls(I64 x) {
+    return x / 100000000;
+}
+
+I64 tp_kind(I64 x) {
+    return (x / 1000000) % 100;
+}
+
+I64 tp_sid(I64 x) {
+    return (x % 1000000) - 1;
+}
+const I64 TP_NONE = 0;
+
+I64 TP_U0() {
+    return tpack(ast.CLS_SCALAR, ast.SK_U0, -1);
+}
+
+I64 TP_BOOL() {
+    return tpack(ast.CLS_SCALAR, ast.SK_BOOL, -1);
+}
+
+I64 TP_I64() {
+    return tpack(ast.CLS_SCALAR, ast.SK_I64, -1);
+}
+
+I64 TP_F64() {
+    return tpack(ast.CLS_SCALAR, ast.SK_F64, -1);
+}
+
+I64 TP_U8PTR() {
+    return tpack(ast.CLS_SCALARP, ast.SK_U8, -1);
+}
 
 Bool tp_isint(I64 x) {
     if tp_cls(x) != ast.CLS_SCALAR {
@@ -48,16 +71,26 @@ Bool _struct_has_cap(Ck* c, I64 sid) {
 
 U8* sk_name(I64 k) {
     switch k {
-        case ast.SK_U0:   return "U0";
-        case ast.SK_BOOL: return "Bool";
-        case ast.SK_I8:   return "I8";
-        case ast.SK_I16:  return "I16";
-        case ast.SK_I32:  return "I32";
-        case ast.SK_I64:  return "I64";
-        case ast.SK_U8:   return "U8";
-        case ast.SK_U16:  return "U16";
-        case ast.SK_U32:  return "U32";
-        case ast.SK_F64:  return "F64";
+        case ast.SK_U0:
+            return "U0";
+        case ast.SK_BOOL:
+            return "Bool";
+        case ast.SK_I8:
+            return "I8";
+        case ast.SK_I16:
+            return "I16";
+        case ast.SK_I32:
+            return "I32";
+        case ast.SK_I64:
+            return "I64";
+        case ast.SK_U8:
+            return "U8";
+        case ast.SK_U16:
+            return "U16";
+        case ast.SK_U32:
+            return "U32";
+        case ast.SK_F64:
+            return "F64";
     }
     return "U64";
 }
@@ -73,7 +106,7 @@ struct Local {
     I64 off;
 }
 
-const I64 ONLY_ALL = -1;
+const I64 ONLY_ALL     = -1;
 const I64 ONLY_LAYOUTS = -2;
 
 struct Ck {
@@ -164,10 +197,14 @@ U0 cerr_tt(Ck* c, I64 n, U8* msg, I64 have, I64 want) {
 
 I64 tp_size(Ck* c, I64 x) {
     switch tp_cls(x) {
-        case 1:    return ast.sk_size(tp_kind(x));
-        case 2, 4: return 32;
-        case 3:    return ast.ng(c.t, tp_sid(x), ast.SDEF_SIZE);
-        case ast.CLS_FN: return 8;
+        case 1:
+            return ast.sk_size(tp_kind(x));
+        case 2, 4:
+            return 32;
+        case 3:
+            return ast.ng(c.t, tp_sid(x), ast.SDEF_SIZE);
+        case ast.CLS_FN:
+            return 8;
     }
     return 0;
 }
@@ -779,10 +816,8 @@ I64 chk_bin(Ck* c, I64 n) {
             if a == b {
                 r = 1;
             }
-        } else {
-            if a != b {
-                r = 1;
-            }
+        } else if a != b {
+            r = 1;
         }
         ast.ns(t, n, ast.N_KIND, ast.ND_NUM);
         ast.ns(t, n, ast.N_IVAL, r);
@@ -814,10 +849,8 @@ I64 chk_bin(Ck* c, I64 n) {
         if cmp == false && op != ast.OP_ADD && op != ast.OP_SUB && op != ast.OP_MUL && op != ast.OP_DIV {
             cerr(c, n, "F64 supports + - * / and comparisons");
         }
-    } else {
-        if tp_isint(ty) == false {
-            cerr(c, n, "arithmetic needs integer operands");
-        }
+    } else if tp_isint(ty) == false {
+        cerr(c, n, "arithmetic needs integer operands");
     }
     if op == ast.OP_DIV || op == ast.OP_MOD {
         I64 r = ast.nb(t, n);
@@ -2074,9 +2107,12 @@ I64 narrow_to(I64 v, I64 kind) {
 
 I64 const_binop(Ck* c, I64 n, I64 op, I64 a, I64 b) {
     switch op {
-        case ast.OP_ADD: return a + b;
-        case ast.OP_SUB: return a - b;
-        case ast.OP_MUL: return a * b;
+        case ast.OP_ADD:
+            return a + b;
+        case ast.OP_SUB:
+            return a - b;
+        case ast.OP_MUL:
+            return a * b;
         case ast.OP_DIV:
             if b == 0 {
                 cerr(c, n, "division by zero");
@@ -2087,11 +2123,16 @@ I64 const_binop(Ck* c, I64 n, I64 op, I64 a, I64 b) {
                 cerr(c, n, "division by zero");
             }
             return a % b;
-        case ast.OP_SHL: return a << b;
-        case ast.OP_SHR: return a >> b;
-        case ast.OP_AND: return a & b;
-        case ast.OP_XOR: return a ^ b;
-        case ast.OP_OR:  return a | b;
+        case ast.OP_SHL:
+            return a << b;
+        case ast.OP_SHR:
+            return a >> b;
+        case ast.OP_AND:
+            return a & b;
+        case ast.OP_XOR:
+            return a ^ b;
+        case ast.OP_OR:
+            return a | b;
         case ast.OP_LT:
             if a < b {
                 return 1;
@@ -2205,7 +2246,7 @@ U0 check_all(Ck* c) {
         if ast.nkind(t, d) == ast.ND_FN {
             for I64 e = ast.nnext(t, d); e != 0; e = ast.nnext(t, e) {
                 if ast.nkind(t, e) == ast.ND_FN && ast.node_pkg(t, e) == ast.node_pkg(t, d) &&
-                   str.eq(ast.nname(t, e), ast.nname(t, d)) {
+                    str.eq(ast.nname(t, e), ast.nname(t, d)) {
                     cerr(c, e, "function redefined");
                 }
             }

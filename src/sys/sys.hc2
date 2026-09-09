@@ -1,4 +1,3 @@
-
 const I64 DENT_RECLEN_AT = 16;
 
 struct _CapWords {

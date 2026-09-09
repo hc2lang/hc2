@@ -1,4 +1,3 @@
-
 U8* from_raw(I64 addr, I64 len) {
     unsafe {
         I64 h = addr - 16;
@@ -87,34 +86,34 @@ I64 _sys6(I64 num, I64 a1, I64 a2, I64 a3, I64 a4, I64 a5, I64 a6) {
     return r;
 }
 
-const I64 SYS_EXIT = 0x2000001;
-const I64 SYS_READ = 0x2000003;
-const I64 SYS_WRITE = 0x2000004;
-const I64 SYS_OPEN = 0x2000005;
-const I64 SYS_CLOSE = 0x2000006;
-const I64 SYS_UNLINK = 0x200000A;
-const I64 SYS_CHMOD = 0x200000F;
-const I64 SYS_MPROTECT = 0x200004A;
-const I64 SYS_MKDIR = 0x2000088;
-const I64 SYS_RMDIR = 0x2000089;
-const I64 SYS_MMAP = 0x20000C5;
-const I64 SYS_FSTAT64 = 0x2000153;
+const I64 SYS_EXIT            = 0x2000001;
+const I64 SYS_READ            = 0x2000003;
+const I64 SYS_WRITE           = 0x2000004;
+const I64 SYS_OPEN            = 0x2000005;
+const I64 SYS_CLOSE           = 0x2000006;
+const I64 SYS_UNLINK          = 0x200000A;
+const I64 SYS_CHMOD           = 0x200000F;
+const I64 SYS_MPROTECT        = 0x200004A;
+const I64 SYS_MKDIR           = 0x2000088;
+const I64 SYS_RMDIR           = 0x2000089;
+const I64 SYS_MMAP            = 0x20000C5;
+const I64 SYS_FSTAT64         = 0x2000153;
 const I64 SYS_GETDIRENTRIES64 = 0x2000158;
 
-const I64 PROT_READ = 1;
-const I64 PROT_WRITE = 2;
-const I64 MAP_PRIVATE = 2;
-const I64 MAP_ANON = 4096;
-const I64 O_RDONLY = 0;
-const I64 O_WRONLY = 1;
-const I64 O_CREAT = 512;
-const I64 O_TRUNC = 1024;
-const I64 MODE_644 = 420;
-const I64 MODE_755 = 493;
+const I64 PROT_READ    = 1;
+const I64 PROT_WRITE   = 2;
+const I64 MAP_PRIVATE  = 2;
+const I64 MAP_ANON     = 4096;
+const I64 O_RDONLY     = 0;
+const I64 O_WRONLY     = 1;
+const I64 O_CREAT      = 512;
+const I64 O_TRUNC      = 1024;
+const I64 MODE_644     = 420;
+const I64 MODE_755     = 493;
 const I64 STAT_SIZE_AT = 96;
 const I64 DENT_NAME_AT = 21;
 
-const U8* OS = "macos";
+const U8* OS   = "macos";
 const U8* ARCH = "arm64";
 
 I64 mmap(I64 len) {

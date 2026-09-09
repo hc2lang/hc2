@@ -9,25 +9,37 @@ import "str";
 
 U8* ptr_word(I64 kind) {
     switch ast.sk_size(kind) {
-        case 1: return "byte ptr ";
-        case 2: return "word ptr ";
-        case 4: return "dword ptr ";
+        case 1:
+            return "byte ptr ";
+        case 2:
+            return "word ptr ";
+        case 4:
+            return "dword ptr ";
     }
     return "qword ptr ";
 }
+
 U0 ld_at(gen.Em* e, I64 kind, U8* addr) {
     switch kind {
-        case ast.SK_I8:          gen.out(e, "  movsx rax, byte ptr ");
-        case ast.SK_U8, ast.SK_BOOL: gen.out(e, "  movzx rax, byte ptr ");
-        case ast.SK_I16:         gen.out(e, "  movsx rax, word ptr ");
-        case ast.SK_U16:         gen.out(e, "  movzx rax, word ptr ");
-        case ast.SK_I32:         gen.out(e, "  movsxd rax, dword ptr ");
-        case ast.SK_U32:         gen.out(e, "  mov eax, dword ptr ");
-        default:                 gen.out(e, "  mov rax, qword ptr ");
+        case ast.SK_I8:
+            gen.out(e, "  movsx rax, byte ptr ");
+        case ast.SK_U8, ast.SK_BOOL:
+            gen.out(e, "  movzx rax, byte ptr ");
+        case ast.SK_I16:
+            gen.out(e, "  movsx rax, word ptr ");
+        case ast.SK_U16:
+            gen.out(e, "  movzx rax, word ptr ");
+        case ast.SK_I32:
+            gen.out(e, "  movsxd rax, dword ptr ");
+        case ast.SK_U32:
+            gen.out(e, "  mov eax, dword ptr ");
+        default:
+            gen.out(e, "  mov rax, qword ptr ");
     }
     gen.out(e, addr);
     gen.out(e, "\n");
 }
+
 U0 ld_rbp(gen.Em* e, I64 kind, I64 off) {
     if off == e.ro1 {
         gen.out(e, "  mov rax, r12\n");
@@ -38,38 +50,58 @@ U0 ld_rbp(gen.Em* e, I64 kind, I64 off) {
         return;
     }
     switch kind {
-        case ast.SK_I8:          gen.out(e, "  movsx rax, byte ptr [rbp - ");
-        case ast.SK_U8, ast.SK_BOOL: gen.out(e, "  movzx rax, byte ptr [rbp - ");
-        case ast.SK_I16:         gen.out(e, "  movsx rax, word ptr [rbp - ");
-        case ast.SK_U16:         gen.out(e, "  movzx rax, word ptr [rbp - ");
-        case ast.SK_I32:         gen.out(e, "  movsxd rax, dword ptr [rbp - ");
-        case ast.SK_U32:         gen.out(e, "  mov eax, dword ptr [rbp - ");
-        default:                 gen.out(e, "  mov rax, qword ptr [rbp - ");
+        case ast.SK_I8:
+            gen.out(e, "  movsx rax, byte ptr [rbp - ");
+        case ast.SK_U8, ast.SK_BOOL:
+            gen.out(e, "  movzx rax, byte ptr [rbp - ");
+        case ast.SK_I16:
+            gen.out(e, "  movsx rax, word ptr [rbp - ");
+        case ast.SK_U16:
+            gen.out(e, "  movzx rax, word ptr [rbp - ");
+        case ast.SK_I32:
+            gen.out(e, "  movsxd rax, dword ptr [rbp - ");
+        case ast.SK_U32:
+            gen.out(e, "  mov eax, dword ptr [rbp - ");
+        default:
+            gen.out(e, "  mov rax, qword ptr [rbp - ");
     }
     gen.outi(e, off);
     gen.out(e, "]\n");
 }
+
 U0 ld_glob(gen.Em* e, I64 kind, I64 g) {
     switch kind {
-        case ast.SK_I8:          gen.out(e, "  movsx rax, byte ptr [rip + ");
-        case ast.SK_U8, ast.SK_BOOL: gen.out(e, "  movzx rax, byte ptr [rip + ");
-        case ast.SK_I16:         gen.out(e, "  movsx rax, word ptr [rip + ");
-        case ast.SK_U16:         gen.out(e, "  movzx rax, word ptr [rip + ");
-        case ast.SK_I32:         gen.out(e, "  movsxd rax, dword ptr [rip + ");
-        case ast.SK_U32:         gen.out(e, "  mov eax, dword ptr [rip + ");
-        default:                 gen.out(e, "  mov rax, qword ptr [rip + ");
+        case ast.SK_I8:
+            gen.out(e, "  movsx rax, byte ptr [rip + ");
+        case ast.SK_U8, ast.SK_BOOL:
+            gen.out(e, "  movzx rax, byte ptr [rip + ");
+        case ast.SK_I16:
+            gen.out(e, "  movsx rax, word ptr [rip + ");
+        case ast.SK_U16:
+            gen.out(e, "  movzx rax, word ptr [rip + ");
+        case ast.SK_I32:
+            gen.out(e, "  movsxd rax, dword ptr [rip + ");
+        case ast.SK_U32:
+            gen.out(e, "  mov eax, dword ptr [rip + ");
+        default:
+            gen.out(e, "  mov rax, qword ptr [rip + ");
     }
     gen.emit_sym(e, g);
     gen.out(e, "]\n");
 }
+
 U8* reg_of(I64 kind) {
     switch ast.sk_size(kind) {
-        case 1: return "al";
-        case 2: return "ax";
-        case 4: return "eax";
+        case 1:
+            return "al";
+        case 2:
+            return "ax";
+        case 4:
+            return "eax";
     }
     return "rax";
 }
+
 U0 st_at(gen.Em* e, I64 kind, U8* addr) {
     gen.out(e, "  mov ");
     gen.out(e, ptr_word(kind));
@@ -78,6 +110,7 @@ U0 st_at(gen.Em* e, I64 kind, U8* addr) {
     gen.out(e, reg_of(kind));
     gen.out(e, "\n");
 }
+
 U0 st_glob(gen.Em* e, I64 kind, I64 g) {
     gen.out(e, "  mov ");
     gen.out(e, ptr_word(kind));
@@ -87,6 +120,7 @@ U0 st_glob(gen.Em* e, I64 kind, I64 g) {
     gen.out(e, reg_of(kind));
     gen.out(e, "\n");
 }
+
 U0 st_rbp(gen.Em* e, I64 kind, I64 off) {
     if off == e.ro1 {
         gen.out(e, "  mov r12, rax\n");
@@ -104,16 +138,24 @@ U0 st_rbp(gen.Em* e, I64 kind, I64 off) {
     gen.out(e, reg_of(kind));
     gen.out(e, "\n");
 }
+
 U0 norm(gen.Em* e, I64 kind) {
     switch kind {
-        case ast.SK_I8:  gen.out(e, "  movsx rax, al\n");
-        case ast.SK_U8:  gen.out(e, "  movzx rax, al\n");
-        case ast.SK_I16: gen.out(e, "  movsx rax, ax\n");
-        case ast.SK_U16: gen.out(e, "  movzx rax, ax\n");
-        case ast.SK_I32: gen.out(e, "  movsxd rax, eax\n");
-        case ast.SK_U32: gen.out(e, "  mov eax, eax\n");
+        case ast.SK_I8:
+            gen.out(e, "  movsx rax, al\n");
+        case ast.SK_U8:
+            gen.out(e, "  movzx rax, al\n");
+        case ast.SK_I16:
+            gen.out(e, "  movsx rax, ax\n");
+        case ast.SK_U16:
+            gen.out(e, "  movzx rax, ax\n");
+        case ast.SK_I32:
+            gen.out(e, "  movsxd rax, eax\n");
+        case ast.SK_U32:
+            gen.out(e, "  mov eax, eax\n");
     }
 }
+
 U0 fat_push_from_rbp(gen.Em* e, I64 off) {
     gen.out(e, "  sub rsp, 32\n");
     for I64 k = 0; k < 32; k = k + 8 {
@@ -124,6 +166,7 @@ U0 fat_push_from_rbp(gen.Em* e, I64 off) {
         gen.out(e, "], rax\n");
     }
 }
+
 U0 fat_pop_to_rbp(gen.Em* e, I64 off) {
     for I64 k = 0; k < 32; k = k + 8 {
         gen.out(e, "  mov rax, [rsp + ");
@@ -134,6 +177,7 @@ U0 fat_pop_to_rbp(gen.Em* e, I64 off) {
     }
     gen.out(e, "  add rsp, 32\n");
 }
+
 U0 push_str(gen.Em* e, I64 id) {
     gen.out(e, "  sub rsp, 32\n  lea rax, [rip + .Lstr");
     gen.outi(e, id);
@@ -143,6 +187,7 @@ U0 push_str(gen.Em* e, I64 id) {
     gen.outi(e, e.slen[id]);
     gen.out(e, "\n  mov qword ptr [rsp + 24], 0\n");
 }
+
 U0 push_lit(gen.Em* e, I64 id) {
     gen.out(e, "  lea rax, [rip + .Lstr");
     gen.outi(e, id);
@@ -150,10 +195,12 @@ U0 push_lit(gen.Em* e, I64 id) {
     gen.outi(e, e.slen[id]);
     gen.out(e, "\n");
 }
+
 U0 emit_write_pool(gen.Em* e, I64 id) {
     push_lit(e, id);
     gen.out(e, "  call rt.hc2_print_lit\n  add rsp, 16\n");
 }
+
 U0 trap_arm(gen.Em* e, I64 lab, I64 pre, I64 kind) {
     gen.lbl(e, lab);
     gen.out(e, ":\n");
@@ -162,6 +209,7 @@ U0 trap_arm(gen.Em* e, I64 lab, I64 pre, I64 kind) {
     gen.outi(e, kind);
     gen.out(e, "\n  call rt.hc2_trap\n");
 }
+
 U8* sregn(I64 k) {
     if k == 0 {
         return "r15";
@@ -171,6 +219,7 @@ U8* sregn(I64 k) {
     }
     return "rbx";
 }
+
 U8* sregq(I64 k) {
     if k == 0 {
         return "[r15]";
@@ -180,6 +229,7 @@ U8* sregq(I64 k) {
     }
     return "[rbx]";
 }
+
 U0 out_loc(gen.Em* e, I64 off) {
     if off == e.ro1 {
         gen.out(e, "r12");
@@ -193,6 +243,7 @@ U0 out_loc(gen.Em* e, I64 off) {
     gen.outi(e, off);
     gen.out(e, "]");
 }
+
 U0 gen_store_at(gen.Em* e, I64 rhs, I64 kind) {
     if gen.leafish(e, rhs) != 0 {
         gen.out(e, "  mov rdi, rax\n");
@@ -205,6 +256,7 @@ U0 gen_store_at(gen.Em* e, I64 rhs, I64 kind) {
     gen.out(e, "  pop rdi\n");
     st_at(e, kind, "[rdi]");
 }
+
 U0 chkderef(gen.Em* e, I64 n, I64 size, I64 wr) {
     I64 h = gen.hoisted(e, n);
     I64 needb = 1;
@@ -300,6 +352,7 @@ U0 chkderef(gen.Em* e, I64 n, I64 size, I64 wr) {
     gen.lbl(e, ok);
     gen.out(e, ":\n");
 }
+
 I64 arr_const_flat(gen.Em* e, I64 n) {
     ast.Ast* t = e.t;
     I64 sub = ast.nb(t, n);
@@ -316,6 +369,7 @@ I64 arr_const_flat(gen.Em* e, I64 n) {
     }
     return ast.ng(t, sub, ast.N_IVAL);
 }
+
 U0 gen_sub(gen.Em* e, I64 n) {
     ast.Ast* t = e.t;
     I64 sub = ast.nb(t, n);
@@ -337,6 +391,7 @@ U0 gen_sub(gen.Em* e, I64 n) {
     gen.lbl(e, ok);
     gen.out(e, ":\n");
 }
+
 U0 gen_for_step(gen.Em* e, I64 n, I64 sr) {
     ast.Ast* t = e.t;
     opt.Op* o = e.o;
@@ -372,6 +427,7 @@ U0 gen_for_step(gen.Em* e, I64 n, I64 sr) {
     gen.outi(e, c * esz);
     gen.out(e, "\n");
 }
+
 U0 gen_for_loop(gen.Em* e, I64 n, I64 sr) {
     ast.Ast* t = e.t;
     opt.Op* o = e.o;
@@ -424,6 +480,7 @@ U0 gen_for_loop(gen.Em* e, I64 n, I64 sr) {
     gen.lbl(e, lend);
     gen.out(e, ":\n");
 }
+
 U0 hoist_guard(gen.Em* e, I64 n, I64 lslow) {
     opt.Op* o = e.o;
     I64 aoff = o.ha[n];
@@ -499,6 +556,7 @@ U0 hoist_guard(gen.Em* e, I64 n, I64 lslow) {
         gen.out(e, "\n");
     }
 }
+
 U0 gen_for(gen.Em* e, I64 n) {
     ast.Ast* t = e.t;
     if ast.na(t, n) != 0 {
@@ -546,6 +604,7 @@ U0 gen_for(gen.Em* e, I64 n) {
     gen.lbl(e, ljoin);
     gen.out(e, ":\n");
 }
+
 U0 gen_arr_flat(gen.Em* e, I64 n) {
     ast.Ast* t = e.t;
     I64 base = ast.na(t, n);
@@ -560,6 +619,7 @@ U0 gen_arr_flat(gen.Em* e, I64 n) {
     gen.outi(e, ast.ng(t, n, ast.INDEX_DIM));
     gen.out(e, "\n  add rax, rdi\n");
 }
+
 U0 gen_tab_addr(gen.Em* e, I64 n) {
     ast.Ast* t = e.t;
     I64 esz = ast.ng(t, n, ast.INDEX_ESZ);
@@ -587,6 +647,7 @@ U0 gen_tab_addr(gen.Em* e, I64 n) {
     gen.outi(e, esz);
     gen.out(e, "\n  pop rdi\n  add rax, rdi\n");
 }
+
 U0 gen_arr_addr(gen.Em* e, I64 n) {
     ast.Ast* t = e.t;
     I64 esz = ast.ng(t, n, ast.INDEX_ESZ);
@@ -613,6 +674,7 @@ U0 gen_arr_addr(gen.Em* e, I64 n) {
     gen.outi(e, off);
     gen.out(e, "]\n");
 }
+
 U0 gen_ptr_elem(gen.Em* e, I64 n, I64 wr) {
     ast.Ast* t = e.t;
     I64 esz = ast.ng(t, n, ast.INDEX_ESZ);
@@ -626,6 +688,7 @@ U0 gen_ptr_elem(gen.Em* e, I64 n, I64 wr) {
     gen.out(e, "  add [rsp], rax\n");
     chkderef(e, n, esz, wr);
 }
+
 U0 gen_call(gen.Em* e, I64 n, I64 sret_off) {
     ast.Ast* t = e.t;
     if ast.nop(t, n) == ast.CALL_INDIR {
@@ -738,6 +801,7 @@ U0 gen_call(gen.Em* e, I64 n, I64 sret_off) {
     gen.outi(e, ab + hidden * 8);
     gen.out(e, "\n");
 }
+
 U0 gen_expr(gen.Em* e, I64 n) {
     ast.Ast* t = e.t;
     I64 k = ast.nkind(t, n);
@@ -1147,16 +1211,26 @@ U0 gen_expr(gen.Em* e, I64 n) {
                     gen.out(e, "  movq xmm0, rax\n  movq xmm1, rdi\n");
                 }
                 switch op {
-                    case ast.OP_ADD: gen.out(e, "  addsd xmm0, xmm1\n");
-                    case ast.OP_SUB: gen.out(e, "  subsd xmm0, xmm1\n");
-                    case ast.OP_MUL: gen.out(e, "  mulsd xmm0, xmm1\n");
-                    case ast.OP_DIV: gen.out(e, "  divsd xmm0, xmm1\n");
-                    case ast.OP_EQ:  gen.out(e, "  cmpeqsd xmm0, xmm1\n");
-                    case ast.OP_NE:  gen.out(e, "  cmpneqsd xmm0, xmm1\n");
-                    case ast.OP_LT:  gen.out(e, "  cmpltsd xmm0, xmm1\n");
-                    case ast.OP_GT:  gen.out(e, "  cmpltsd xmm0, xmm1\n");
-                    case ast.OP_LE:  gen.out(e, "  cmplesd xmm0, xmm1\n");
-                    default:         gen.out(e, "  cmplesd xmm0, xmm1\n");
+                    case ast.OP_ADD:
+                        gen.out(e, "  addsd xmm0, xmm1\n");
+                    case ast.OP_SUB:
+                        gen.out(e, "  subsd xmm0, xmm1\n");
+                    case ast.OP_MUL:
+                        gen.out(e, "  mulsd xmm0, xmm1\n");
+                    case ast.OP_DIV:
+                        gen.out(e, "  divsd xmm0, xmm1\n");
+                    case ast.OP_EQ:
+                        gen.out(e, "  cmpeqsd xmm0, xmm1\n");
+                    case ast.OP_NE:
+                        gen.out(e, "  cmpneqsd xmm0, xmm1\n");
+                    case ast.OP_LT:
+                        gen.out(e, "  cmpltsd xmm0, xmm1\n");
+                    case ast.OP_GT:
+                        gen.out(e, "  cmpltsd xmm0, xmm1\n");
+                    case ast.OP_LE:
+                        gen.out(e, "  cmplesd xmm0, xmm1\n");
+                    default:
+                        gen.out(e, "  cmplesd xmm0, xmm1\n");
                 }
                 gen.out(e, "  movq rax, xmm0\n");
                 if op != ast.OP_ADD && op != ast.OP_SUB && op != ast.OP_MUL && op != ast.OP_DIV {
@@ -1165,13 +1239,20 @@ U0 gen_expr(gen.Em* e, I64 n) {
                 return;
             }
             switch op {
-                case ast.OP_ADD: gen.out(e, "  add rax, rdi\n");  norm(e, rk); return;
-                case ast.OP_SUB: gen.out(e, "  sub rax, rdi\n");  norm(e, rk); return;
-                case ast.OP_MUL: gen.out(e, "  imul rax, rdi\n"); norm(e, rk); return;
-                case ast.OP_AND: gen.out(e, "  and rax, rdi\n");  norm(e, rk); return;
-                case ast.OP_XOR: gen.out(e, "  xor rax, rdi\n");  norm(e, rk); return;
-                case ast.OP_OR:  gen.out(e, "  or rax, rdi\n");   norm(e, rk); return;
-                case ast.OP_SHL: gen.out(e, "  mov rcx, rdi\n  shl rax, cl\n"); norm(e, rk); return;
+                case ast.OP_ADD:
+                    gen.out(e, "  add rax, rdi\n"); norm(e, rk); return;
+                case ast.OP_SUB:
+                    gen.out(e, "  sub rax, rdi\n"); norm(e, rk); return;
+                case ast.OP_MUL:
+                    gen.out(e, "  imul rax, rdi\n"); norm(e, rk); return;
+                case ast.OP_AND:
+                    gen.out(e, "  and rax, rdi\n"); norm(e, rk); return;
+                case ast.OP_XOR:
+                    gen.out(e, "  xor rax, rdi\n"); norm(e, rk); return;
+                case ast.OP_OR:
+                    gen.out(e, "  or rax, rdi\n"); norm(e, rk); return;
+                case ast.OP_SHL:
+                    gen.out(e, "  mov rcx, rdi\n  shl rax, cl\n"); norm(e, rk); return;
                 case ast.OP_SHR:
                     if sg {
                         gen.out(e, "  mov rcx, rdi\n  sar rax, cl\n");
@@ -1206,23 +1287,47 @@ U0 gen_expr(gen.Em* e, I64 n) {
             }
             gen.out(e, "  cmp rax, rdi\n  ");
             switch op {
-                case ast.OP_EQ: gen.out(e, "sete");
-                case ast.OP_NE: gen.out(e, "setne");
-                case ast.OP_LT: if sg { gen.out(e, "setl"); }  else { gen.out(e, "setb"); }
-                case ast.OP_LE: if sg { gen.out(e, "setle"); } else { gen.out(e, "setbe"); }
-                case ast.OP_GT: if sg { gen.out(e, "setg"); }  else { gen.out(e, "seta"); }
-                default:        if sg { gen.out(e, "setge"); } else { gen.out(e, "setae"); }
+                case ast.OP_EQ:
+                    gen.out(e, "sete");
+                case ast.OP_NE:
+                    gen.out(e, "setne");
+                case ast.OP_LT:
+                    if sg {
+                        gen.out(e, "setl");
+                    } else {
+                        gen.out(e, "setb");
+                    }
+                case ast.OP_LE:
+                    if sg {
+                        gen.out(e, "setle");
+                    } else {
+                        gen.out(e, "setbe");
+                    }
+                case ast.OP_GT:
+                    if sg {
+                        gen.out(e, "setg");
+                    } else {
+                        gen.out(e, "seta");
+                    }
+                default:
+                    if sg {
+                        gen.out(e, "setge");
+                    } else {
+                        gen.out(e, "setae");
+                    }
             }
             gen.out(e, " al\n  movzx rax, al\n");
             return;
     }
     diag.die("internal: bad expression in gen");
 }
+
 U0 run_defers(gen.Em* e, I64 from) {
     for I64 i = e.ndefer - 1; i >= from; i = i - 1 {
         gen_stmt(e, ast.na(e.t, e.defers[i]));
     }
 }
+
 U0 gen_print(gen.Em* e, I64 n) {
     ast.Ast* t = e.t;
     U8* f = ast.nname(t, n);
@@ -1289,14 +1394,19 @@ U0 gen_print(gen.Em* e, I64 n) {
         emit_write_pool(e, gen.pool(e, ast.blob(t, noff + start, f.len - start)));
     }
 }
+
 U8* size_word(I64 sz) {
     switch sz {
-        case 1: return "byte ptr ";
-        case 2: return "word ptr ";
-        case 4: return "dword ptr ";
+        case 1:
+            return "byte ptr ";
+        case 2:
+            return "word ptr ";
+        case 4:
+            return "dword ptr ";
     }
     return "qword ptr ";
 }
+
 U0 out_lower(gen.Em* e, U8* s) {
     for I64 i = 0; i < s.len; i++ {
         I64 ch = s[i] as I64;
@@ -1306,6 +1416,7 @@ U0 out_lower(gen.Em* e, U8* s) {
         gen.outc(e, ch);
     }
 }
+
 U0 gen_asm(gen.Em* e, I64 n) {
     ast.Ast* t = e.t;
     I64 blk = gen.newlabel(e);
@@ -1366,6 +1477,7 @@ U0 gen_asm(gen.Em* e, I64 n) {
         }
     }
 }
+
 U0 gen_arr_init(gen.Em* e, I64 decl, I64 items, I64 dim, I64 off) {
     ast.Ast* t = e.t;
     I64 esz = ast.ng(t, decl, ast.DECL_ESZ);
@@ -1402,6 +1514,7 @@ U0 gen_arr_init(gen.Em* e, I64 decl, I64 items, I64 dim, I64 off) {
         i = i + 1;
     }
 }
+
 U0 gen_stmt(gen.Em* e, I64 n) {
     ast.Ast* t = e.t;
     I64 k = ast.nkind(t, n);
@@ -1750,6 +1863,7 @@ U0 gen_stmt(gen.Em* e, I64 n) {
     }
     diag.die("internal: bad statement in gen");
 }
+
 U0 gen_fn(gen.Em* e, I64 f) {
     ast.Ast* t = e.t;
     e.fn = f;
@@ -1849,6 +1963,7 @@ U0 gen_fn(gen.Em* e, I64 f) {
     }
     gen.out(e, "  leave\n  ret\n");
 }
+
 U0 emit_datum(gen.Em* e, I64 x, I64 cls, I64 kind) {
     ast.Ast* t = e.t;
     if cls == ast.CLS_FN {
@@ -1890,6 +2005,7 @@ U0 emit_datum(gen.Em* e, I64 x, I64 cls, I64 kind) {
         gen.out(e, "\n");
     }
 }
+
 U0 emit_table(gen.Em* e, I64 g, I64 items, I64 dim) {
     ast.Ast* t = e.t;
     I64 inner = ast.nnext(t, dim);
@@ -1919,6 +2035,7 @@ U0 emit_table(gen.Em* e, I64 g, I64 items, I64 dim) {
         }
     }
 }
+
 U0 gen_unit(gen.Em* e) {
     ast.Ast* t = e.t;
     gen.out(e, ".intel_syntax noprefix\n.text\n");

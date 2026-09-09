@@ -4,41 +4,41 @@ import "heap";
 import "hc2/asm";
 
 const I64 MACHO_VBASE = 0x100000000;
-const I64 MACHO_PAGE = 16384;
+const I64 MACHO_PAGE  = 16384;
 
-const I64 MH_MAGIC64 = 0xFEEDFACF;
-const I64 MH_EXECUTE = 2;
+const I64 MH_MAGIC64                        = 0xFEEDFACF;
+const I64 MH_EXECUTE                        = 2;
 const I64 MH_NOUNDEFS_DYLDLINK_TWOLEVEL_PIE = 0x200085;
-const I64 CPU_ARM64 = 0x0100000C;
+const I64 CPU_ARM64                         = 0x0100000C;
 
-const I64 LC_SEGMENT_64 = 0x19;
-const I64 LC_SYMTAB = 0x2;
-const I64 LC_DYSYMTAB = 0xB;
-const I64 LC_LOAD_DYLIB = 0xC;
-const I64 LC_LOAD_DYLINKER = 0xE;
-const I64 LC_UUID = 0x1B;
-const I64 LC_CODE_SIGNATURE = 0x1D;
-const I64 LC_BUILD_VERSION = 0x32;
-const I64 LC_MAIN = 0x80000028;
+const I64 LC_SEGMENT_64          = 0x19;
+const I64 LC_SYMTAB              = 0x2;
+const I64 LC_DYSYMTAB            = 0xB;
+const I64 LC_LOAD_DYLIB          = 0xC;
+const I64 LC_LOAD_DYLINKER       = 0xE;
+const I64 LC_UUID                = 0x1B;
+const I64 LC_CODE_SIGNATURE      = 0x1D;
+const I64 LC_BUILD_VERSION       = 0x32;
+const I64 LC_MAIN                = 0x80000028;
 const I64 LC_DYLD_CHAINED_FIXUPS = 0x80000034;
-const I64 DYSYMTAB_SIZE = 80;
+const I64 DYSYMTAB_SIZE          = 80;
 
-const I64 PLATFORM_MACOS = 1;
-const I64 MACOS_14_0 = 0x000E0000;
+const I64 PLATFORM_MACOS         = 1;
+const I64 MACOS_14_0             = 0x000E0000;
 const I64 LIBSYSTEM_VERSION_5_76 = 0x054C0000;
-const I64 VERSION_1_0 = 0x00010000;
+const I64 VERSION_1_0            = 0x00010000;
 
 const I64 PTR64_OFFSET_FORMAT = 6;
-const I64 PAGE_START_NONE = 0xFFFF;
-const I64 FIXSEG_HEAD = 22;
+const I64 PAGE_START_NONE     = 0xFFFF;
+const I64 FIXSEG_HEAD         = 22;
 
-const I64 CSMAGIC_SUPERBLOB = 0xFADE0CC0;
-const I64 CSMAGIC_CODEDIR = 0xFADE0C02;
-const I64 CS_SLOT_CODEDIR = 0;
-const I64 CD_VERSION_EXECSEG = 0x20400;
-const I64 CD_ADHOC = 2;
-const I64 CD_HASH_SHA256 = 2;
-const I64 CD_PAGE_4K_LOG2 = 12;
+const I64 CSMAGIC_SUPERBLOB   = 0xFADE0CC0;
+const I64 CSMAGIC_CODEDIR     = 0xFADE0C02;
+const I64 CS_SLOT_CODEDIR     = 0;
+const I64 CD_VERSION_EXECSEG  = 0x20400;
+const I64 CD_ADHOC            = 2;
+const I64 CD_HASH_SHA256      = 2;
+const I64 CD_PAGE_4K_LOG2     = 12;
 const I64 EXECSEG_MAIN_BINARY = 1;
 
 struct MachHdr {
@@ -155,7 +155,7 @@ U0 put64be(U8* b, I64 at, I64 v) {
 }
 
 U0 macho_seg(U8* b, I64 at, U8* name, I64 vmaddr, I64 vmsize,
-             I64 fileoff, I64 filesize, I64 maxp, I64 initp) {
+    I64 fileoff, I64 filesize, I64 maxp, I64 initp) {
     Seg* g = b[at : at + 72] as Seg*;
     g.cmd = LC_SEGMENT_64 as I32;
     g.cmdsize = 72;

@@ -6,11 +6,11 @@ import "hc2/isa/a64";
 import "hc2/isa/x86";
 import "heap";
 
-const I64 OPR_REG  = 1;
-const I64 OPR_IMM  = 2;
-const I64 OPR_MEM  = 3;
-const I64 OPR_LBL  = 4;
-const I64 OPR_RIP  = 5;
+const I64 OPR_REG = 1;
+const I64 OPR_IMM = 2;
+const I64 OPR_MEM = 3;
+const I64 OPR_LBL = 4;
+const I64 OPR_RIP = 5;
 
 struct Op {
     I64 kind;
@@ -1369,14 +1369,30 @@ U0 encode(As* s, U8* m, I64 nops) {
         }
         I64 sop = -1;
         I64 simm = -1;
-        if str.eq(m, "addsd") { sop = 0x58; }
-        if str.eq(m, "subsd") { sop = 0x5c; }
-        if str.eq(m, "mulsd") { sop = 0x59; }
-        if str.eq(m, "divsd") { sop = 0x5e; }
-        if str.eq(m, "cmpeqsd") { sop = 0xc2; simm = 0; }
-        if str.eq(m, "cmpltsd") { sop = 0xc2; simm = 1; }
-        if str.eq(m, "cmplesd") { sop = 0xc2; simm = 2; }
-        if str.eq(m, "cmpneqsd") { sop = 0xc2; simm = 4; }
+        if str.eq(m, "addsd") {
+            sop = 0x58;
+        }
+        if str.eq(m, "subsd") {
+            sop = 0x5c;
+        }
+        if str.eq(m, "mulsd") {
+            sop = 0x59;
+        }
+        if str.eq(m, "divsd") {
+            sop = 0x5e;
+        }
+        if str.eq(m, "cmpeqsd") {
+            sop = 0xc2; simm = 0;
+        }
+        if str.eq(m, "cmpltsd") {
+            sop = 0xc2; simm = 1;
+        }
+        if str.eq(m, "cmplesd") {
+            sop = 0xc2; simm = 2;
+        }
+        if str.eq(m, "cmpneqsd") {
+            sop = 0xc2; simm = 4;
+        }
         if sop >= 0 {
             emit8(s, 0xf2);
             emit8(s, 0x0f);
@@ -1828,18 +1844,42 @@ I64 am_off(I64 m) {
 }
 
 I64 a64_cond(As* s, U8* nm) {
-    if str.eq(nm, "eq") { return a64.EQ; }
-    if str.eq(nm, "ne") { return a64.NE; }
-    if str.eq(nm, "cs") { return a64.CS; }
-    if str.eq(nm, "cc") { return a64.CC; }
-    if str.eq(nm, "mi") { return a64.MI; }
-    if str.eq(nm, "pl") { return a64.PL; }
-    if str.eq(nm, "hi") { return a64.HI; }
-    if str.eq(nm, "ls") { return a64.LS; }
-    if str.eq(nm, "ge") { return a64.GE; }
-    if str.eq(nm, "lt") { return a64.LT; }
-    if str.eq(nm, "gt") { return a64.GT; }
-    if str.eq(nm, "le") { return a64.LE; }
+    if str.eq(nm, "eq") {
+        return a64.EQ;
+    }
+    if str.eq(nm, "ne") {
+        return a64.NE;
+    }
+    if str.eq(nm, "cs") {
+        return a64.CS;
+    }
+    if str.eq(nm, "cc") {
+        return a64.CC;
+    }
+    if str.eq(nm, "mi") {
+        return a64.MI;
+    }
+    if str.eq(nm, "pl") {
+        return a64.PL;
+    }
+    if str.eq(nm, "hi") {
+        return a64.HI;
+    }
+    if str.eq(nm, "ls") {
+        return a64.LS;
+    }
+    if str.eq(nm, "ge") {
+        return a64.GE;
+    }
+    if str.eq(nm, "lt") {
+        return a64.LT;
+    }
+    if str.eq(nm, "gt") {
+        return a64.GT;
+    }
+    if str.eq(nm, "le") {
+        return a64.LE;
+    }
     aerr(s, "unknown condition");
     return 0;
 }
@@ -2628,7 +2668,7 @@ I64 gsym_find(As* s, I64 noff, I64 nlen) {
     for I64 i = 0; i < s.ngsym; i++ {
         if s.gnlen[i] == nlen {
             if str.eq(s.blob[s.gnoff[i] : s.gnoff[i] + s.gnlen[i]],
-                         s.blob[noff : noff + nlen]) {
+                s.blob[noff : noff + nlen]) {
                 return i;
             }
         }
@@ -2709,7 +2749,7 @@ const I64 OBJHDR = 56;
 
 U8* obj_write(As* s) {
     I64 n = OBJHDR + s.tlen + s.rlen + s.dlen + s.bloblen
-                + s.ngsym * 32 + s.nrel * 56;
+        + s.ngsym * 32 + s.nrel * 56;
     U8* b = heap.alloc(n);
     put64(b, 0, s.tlen);
     put64(b, 8, s.rlen);
