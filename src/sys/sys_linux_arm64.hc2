@@ -1,4 +1,3 @@
-
 U8* from_raw(I64 addr, I64 len) {
     unsafe {
         I64 h = addr - 16;
@@ -70,35 +69,35 @@ I64 _sys6(I64 num, I64 a1, I64 a2, I64 a3, I64 a4, I64 a5, I64 a6) {
 }
 
 const I64 SYS_GETDENTS64 = 61;
-const I64 SYS_READ = 63;
-const I64 SYS_WRITE = 64;
-const I64 SYS_OPENAT = 56;
-const I64 SYS_CLOSE = 57;
-const I64 SYS_FSTAT = 80;
-const I64 SYS_MMAP = 222;
-const I64 SYS_MPROTECT = 226;
-const I64 SYS_EXIT = 93;
-const I64 SYS_MKDIRAT = 34;
-const I64 SYS_UNLINKAT = 35;
-const I64 SYS_FCHMODAT = 53;
+const I64 SYS_READ       = 63;
+const I64 SYS_WRITE      = 64;
+const I64 SYS_OPENAT     = 56;
+const I64 SYS_CLOSE      = 57;
+const I64 SYS_FSTAT      = 80;
+const I64 SYS_MMAP       = 222;
+const I64 SYS_MPROTECT   = 226;
+const I64 SYS_EXIT       = 93;
+const I64 SYS_MKDIRAT    = 34;
+const I64 SYS_UNLINKAT   = 35;
+const I64 SYS_FCHMODAT   = 53;
 const I64 SYS_READLINKAT = 78;
 
-const I64 AT_FDCWD = -100;
-const I64 AT_REMOVEDIR = 512;
-const I64 PROT_READ = 1;
-const I64 PROT_WRITE = 2;
-const I64 MAP_PRIVATE = 2;
+const I64 AT_FDCWD      = -100;
+const I64 AT_REMOVEDIR  = 512;
+const I64 PROT_READ     = 1;
+const I64 PROT_WRITE    = 2;
+const I64 MAP_PRIVATE   = 2;
 const I64 MAP_ANONYMOUS = 32;
-const I64 O_RDONLY = 0;
-const I64 O_WRONLY = 1;
-const I64 O_CREAT = 64;
-const I64 O_TRUNC = 512;
-const I64 MODE_644 = 420;
-const I64 MODE_755 = 493;
-const I64 STAT_SIZE_AT = 48;
-const I64 DENT_NAME_AT = 19;
+const I64 O_RDONLY      = 0;
+const I64 O_WRONLY      = 1;
+const I64 O_CREAT       = 64;
+const I64 O_TRUNC       = 512;
+const I64 MODE_644      = 420;
+const I64 MODE_755      = 493;
+const I64 STAT_SIZE_AT  = 48;
+const I64 DENT_NAME_AT  = 19;
 
-const U8* OS = "linux";
+const U8* OS   = "linux";
 const U8* ARCH = "arm64";
 
 I64 mmap(I64 len) {

@@ -1,0 +1,631 @@
+import "heap";
+import "str";
+
+const I64 INDENT = 4;
+const I64 MAXCUT = 16;
+
+const I64 LK_NONE = 0;
+const I64 LK_DECL = 1;
+const I64 LK_ROW  = 2;
+
+struct Buf {
+    U8* b;
+    I64 n;
+    I64 cap;
+}
+
+struct Line {
+    I64 off;
+    I64 n;
+    I64 ind;
+    I64 kind;
+    I64 ncut;
+    I64 ccut;
+    I64 cpad;
+}
+
+struct Fm {
+    U8* path;
+    Lx* lx;
+    I64 p;
+    Buf* work;
+    Buf* out;
+    I64* stk;
+    I64 sp;
+    I64 lastclosed;
+    I64* tpos;
+    Line* lines;
+    I64 nlines;
+    I64* cuts;
+    I64* pads;
+}
+
+Buf* buf_new(I64 cap) {
+    Buf* x = heap.alloc(sizeof(Buf)) as Buf*;
+    x.b = heap.alloc(cap);
+    x.n = 0;
+    x.cap = cap;
+    return x;
+}
+
+U0 buf_grow(Buf* x, I64 need) {
+    if x.n + need <= x.cap {
+        return;
+    }
+    I64 ncap = x.cap * 2;
+    for ncap < x.n + need {
+        ncap = ncap * 2;
+    }
+    U8* nb = heap.alloc(ncap);
+    for I64 i = 0; i < x.n; i++ {
+        nb[i] = x.b[i];
+    }
+    heap.free(x.b);
+    x.b = nb;
+    x.cap = ncap;
+}
+
+U0 buf_c(Buf* x, I64 c) {
+    buf_grow(x, 1);
+    x.b[x.n] = c as U8;
+    x.n = x.n + 1;
+}
+
+U0 buf_s(Buf* x, U8* s) {
+    buf_grow(x, s.len);
+    for I64 i = 0; i < s.len; i++ {
+        x.b[x.n + i] = s[i];
+    }
+    x.n = x.n + s.len;
+}
+
+U0 buf_spaces(Buf* x, I64 n) {
+    for I64 i = 0; i < n; i++ {
+        buf_c(x, ' ');
+    }
+}
+
+U8* buf_bytes(Buf* x) {
+    return x.b[0 : x.n];
+}
+
+U0 buf_free(Buf* x) {
+    heap.free(x.b);
+}
+
+Fm* fm_new(U8* path, Lx* lx) {
+    Fm* f = heap.alloc(sizeof(Fm)) as Fm*;
+    f.path = path;
+    f.lx = lx;
+    f.p = 0;
+    f.work = buf_new(lx.src.len * 2 + 256);
+    f.out = buf_new(lx.src.len * 2 + 256);
+    f.stk = heap.alloc((lx.ntok + 1) * sizeof(I64)) as I64*;
+    f.sp = 0;
+    f.lastclosed = 0;
+    f.tpos = heap.alloc((lx.ntok + 1) * sizeof(I64)) as I64*;
+    f.nlines = 0;
+    return f;
+}
+
+U0 fm_free(Fm* f) {
+    buf_free(f.work);
+    buf_free(f.out);
+    heap.free(f.stk as U8*);
+    heap.free(f.tpos as U8*);
+    heap.free(f.lines as U8*);
+    heap.free(f.cuts as U8*);
+    heap.free(f.pads as U8*);
+}
+
+U8* format_source(Fm* f) {
+    parse_all(f);
+    reflow(f);
+    emit_all(f);
+    align_all(f);
+    render(f);
+    return buf_bytes(f.out);
+}
+
+Bool p1(Fm* f, Tok* t, I64 c) {
+    if t.kind != TK_PUNCT || t.tlen != 1 {
+        return false;
+    }
+    return (f.lx.src[t.off] as I64) == c;
+}
+
+Bool pt(Fm* f, Tok* t, U8* s) {
+    if t.kind != TK_PUNCT {
+        return false;
+    }
+    return str.eq(tok_text(f.lx, t), s);
+}
+
+Bool is_opener(Fm* f, Tok* t) {
+    return p1(f, t, '{') || p1(f, t, '(') || p1(f, t, '[');
+}
+
+Bool is_closer(Fm* f, Tok* t) {
+    return p1(f, t, '}') || p1(f, t, ')') || p1(f, t, ']');
+}
+
+Bool is_case_label(Fm* f, Tok* t) {
+    return t.kind == TK_IDENT && t.flag == FL_CASE;
+}
+
+I64 level_of(I64 bk) {
+    if bk == BK_SWITCH {
+        return 2;
+    }
+    if bk == BK_PAREN || bk == BK_BRACKET {
+        return 0;
+    }
+    return 1;
+}
+
+I64 levels(Fm* f, I64 sp) {
+    I64 n = 0;
+    for I64 i = 0; i < sp; i++ {
+        n = n + level_of(f.stk[i]);
+    }
+    return n;
+}
+
+I64 top(Fm* f) {
+    if f.sp == 0 {
+        return 0;
+    }
+    return f.stk[f.sp - 1];
+}
+
+U0 push_bk(Fm* f, I64 bk) {
+    f.stk[f.sp] = bk;
+    f.sp = f.sp + 1;
+}
+
+U0 track(Fm* f, Tok* t) {
+    if p1(f, t, '{') {
+        I64 k = t.flag;
+        if k == 0 {
+            k = BK_BLOCK;
+        }
+        push_bk(f, k);
+    } else if p1(f, t, '(') {
+        push_bk(f, BK_PAREN);
+    } else if p1(f, t, '[') {
+        push_bk(f, BK_BRACKET);
+    } else if is_closer(f, t) {
+        if f.sp > 0 {
+            f.sp = f.sp - 1;
+            f.lastclosed = f.stk[f.sp];
+        }
+    }
+}
+
+I64 match_closer(Fm* f, I64 a, I64 b) {
+    I64 depth = 0;
+    for I64 k = a; k < b; k++ {
+        if is_opener(f, tok(f, k)) {
+            depth = depth + 1;
+        }
+        if is_closer(f, tok(f, k)) {
+            depth = depth - 1;
+            if depth == 0 {
+                return k;
+            }
+        }
+    }
+    return -1;
+}
+
+Bool space_between(Fm* f, I64 k) {
+    Tok* a = tok(f, k - 1);
+    Tok* b = tok(f, k);
+    I64 tp = top(f);
+    if tp == BK_ASM {
+        if p1(f, b, ',') || p1(f, b, ':') {
+            return false;
+        }
+        if p1(f, a, '-') && a.flag == FL_UNARY {
+            return false;
+        }
+        return true;
+    }
+    if p1(f, b, ',') || p1(f, b, ';') || p1(f, b, ')') || p1(f, b, ']') {
+        return false;
+    }
+    if pt(f, b, "++") || pt(f, b, "--") {
+        return false;
+    }
+    if p1(f, a, '(') || p1(f, a, '[') {
+        return false;
+    }
+    if p1(f, a, '.') || p1(f, b, '.') {
+        return false;
+    }
+    if pt(f, b, "...") {
+        return b.flag == FL_RANGE;
+    }
+    if pt(f, a, "...") {
+        return true;
+    }
+    if (p1(f, a, '-') || p1(f, a, '&')) && a.flag == FL_UNARY {
+        return false;
+    }
+    if p1(f, b, '(') {
+        if a.kind == TK_IDENT {
+            return is_keyword_at(f, k - 1) && str.eq(tok_text(f.lx, a), "sizeof") == false;
+        }
+        return p1(f, a, ')') == false && p1(f, a, ']') == false;
+    }
+    if p1(f, b, '[') {
+        return false;
+    }
+    if p1(f, b, '{') {
+        return p1(f, a, '{') == false;
+    }
+    if p1(f, a, '{') {
+        if p1(f, b, '}') {
+            return false;
+        }
+        return a.flag != BK_INIT;
+    }
+    if p1(f, b, '}') {
+        return tp != BK_INIT;
+    }
+    if p1(f, a, '}') {
+        return f.lastclosed != BK_INIT;
+    }
+    if p1(f, b, ':') {
+        return b.flag == FL_SLICE;
+    }
+    if p1(f, b, '*') {
+        return b.flag != FL_TYPESTAR;
+    }
+    return true;
+}
+
+Bool would_merge(Fm* f, Tok* a, Tok* b) {
+    if a.kind != TK_PUNCT || b.kind != TK_PUNCT {
+        return false;
+    }
+    I64 x = f.lx.src[a.off + a.tlen - 1] as I64;
+    I64 y = f.lx.src[b.off] as I64;
+    if x == '.' && y == '.' {
+        return true;
+    }
+    if x == '/' && y == '/' {
+        return true;
+    }
+    return two_char_punct(x, y);
+}
+
+I64 continuation(Fm* f, I64 tp, Bool unterm) {
+    if tp == BK_PAREN || tp == BK_BRACKET {
+        return INDENT;
+    }
+    if tp == BK_INIT || tp == BK_ASM {
+        return 0;
+    }
+    if unterm {
+        return INDENT;
+    }
+    return 0;
+}
+
+I64 indent_of(Fm* f, I64 first, I64 cend, Bool unterm) {
+    Tok* t0 = tok(f, first);
+    I64 tp = top(f);
+    I64 base = INDENT * levels(f, f.sp);
+    if cend == first {
+        Tok* nx = tok(f, skip_nc(f, first));
+        if tp == BK_SWITCH && is_case_label(f, nx) {
+            return base - INDENT;
+        }
+        return base + continuation(f, tp, unterm);
+    }
+    if is_closer(f, t0) {
+        I64 sp = f.sp;
+        I64 k = first;
+        for k < cend && sp > 0 && is_closer(f, tok(f, k)) {
+            sp = sp - 1;
+            k = k + 1;
+        }
+        return INDENT * levels(f, sp);
+    }
+    if tp == BK_SWITCH && is_case_label(f, t0) {
+        return base - INDENT;
+    }
+    if tp == BK_ASM && t0.kind == TK_IDENT && cend > first + 1 && p1(f, tok(f, first + 1), ':') {
+        return base - INDENT;
+    }
+    return base + continuation(f, tp, unterm);
+}
+
+Bool unterminated(Fm* f, Tok* last) {
+    I64 tp = top(f);
+    if tp == BK_ASM {
+        return false;
+    }
+    if p1(f, last, ';') || p1(f, last, '{') || p1(f, last, '}') || p1(f, last, ':') {
+        return false;
+    }
+    if p1(f, last, ',') && tp == BK_INIT {
+        return false;
+    }
+    return true;
+}
+
+U0 add_cut(Fm* f, I64 li, I64 pos) {
+    Line* ln = f.lines + li;
+    f.cuts[li * MAXCUT + ln.ncut] = pos;
+    ln.ncut = ln.ncut + 1;
+}
+
+U0 row_cells(Fm* f, I64 li, I64 first, I64 cend) {
+    Line* ln = f.lines + li;
+    I64 a = first;
+    I64 b = cend;
+    for b > a && (p1(f, tok(f, b - 1), ';') || p1(f, tok(f, b - 1), ',')) {
+        b = b - 1;
+    }
+    I64 bal = 0;
+    for I64 k = a; k < b; k++ {
+        if is_opener(f, tok(f, k)) {
+            bal = bal + 1;
+        }
+        if is_closer(f, tok(f, k)) {
+            bal = bal - 1;
+        }
+    }
+    for b > a && bal < 0 && is_closer(f, tok(f, b - 1)) {
+        b = b - 1;
+        bal = bal + 1;
+    }
+    if bal != 0 || b <= a {
+        return;
+    }
+    if p1(f, tok(f, a), '{') && match_closer(f, a, b) == b - 1 {
+        a = a + 1;
+        b = b - 1;
+    }
+    I64 depth = 0;
+    I64 ncut = 0;
+    for I64 k = a; k < b - 1; k++ {
+        Tok* t = tok(f, k);
+        if depth == 0 && p1(f, t, ',') {
+            if ncut >= MAXCUT {
+                ln.ncut = 0;
+                return;
+            }
+            add_cut(f, li, f.tpos[k - first] + 1);
+            ncut = ncut + 1;
+        }
+        if is_opener(f, t) {
+            depth = depth + 1;
+        }
+        if is_closer(f, t) {
+            depth = depth - 1;
+        }
+    }
+    if ncut > 0 {
+        ln.kind = LK_ROW;
+    }
+}
+
+U0 top_cells(Fm* f, I64 li, I64 first, I64 cend) {
+    Line* ln = f.lines + li;
+    I64 depth = 0;
+    I64 eq = -1;
+    for I64 k = first; k < cend; k++ {
+        Tok* t = tok(f, k);
+        if depth == 0 && eq < 0 && p1(f, t, '=') {
+            eq = k;
+        }
+        if is_opener(f, t) {
+            depth = depth + 1;
+        }
+        if is_closer(f, t) {
+            depth = depth - 1;
+        }
+    }
+    if depth == 0 && eq > first && p1(f, tok(f, cend - 1), ';') {
+        ln.kind = LK_DECL;
+        add_cut(f, li, f.tpos[eq - first] - 1);
+    }
+}
+
+U0 line_cells(Fm* f, I64 li, I64 first, I64 cend, I64 sp0, Bool unterm0) {
+    if sp0 == 0 {
+        if unterm0 == false && tok(f, first).kind == TK_IDENT {
+            top_cells(f, li, first, cend);
+        }
+        return;
+    }
+    if f.stk[sp0 - 1] == BK_INIT {
+        row_cells(f, li, first, cend);
+    }
+}
+
+Bool emit_line(Fm* f, I64 first, I64 end, Bool unterm) {
+    I64 li = f.nlines;
+    Line* ln = f.lines + li;
+    f.nlines = li + 1;
+    ln.off = f.work.n;
+    ln.n = 0;
+    ln.ind = 0;
+    ln.kind = LK_NONE;
+    ln.ncut = 0;
+    ln.ccut = -1;
+    ln.cpad = 0;
+    if first == end {
+        return unterm;
+    }
+    I64 cend = end;
+    if tok(f, end - 1).kind == TK_COMMENT {
+        cend = end - 1;
+    }
+    I64 sp0 = f.sp;
+    ln.ind = indent_of(f, first, cend, unterm);
+    if cend == first {
+        buf_s(f.work, tok_text(f.lx, tok(f, first)));
+        ln.n = f.work.n - ln.off;
+        return unterm;
+    }
+    for I64 k = first; k < cend; k++ {
+        Tok* t = tok(f, k);
+        if k > first {
+            if space_between(f, k) || would_merge(f, tok(f, k - 1), t) {
+                buf_c(f.work, ' ');
+            }
+        }
+        f.tpos[k - first] = f.work.n - ln.off;
+        buf_s(f.work, tok_text(f.lx, t));
+        track(f, t);
+    }
+    line_cells(f, li, first, cend, sp0, unterm);
+    if cend < end {
+        ln.ccut = f.work.n - ln.off;
+        buf_s(f.work, "  ");
+        buf_s(f.work, tok_text(f.lx, tok(f, cend)));
+    }
+    ln.n = f.work.n - ln.off;
+    return unterminated(f, tok(f, cend - 1));
+}
+
+U0 emit_all(Fm* f) {
+    I64 i = 0;
+    Bool unterm = false;
+    for true {
+        I64 first = i;
+        for tok(f, i).kind != TK_NL && tok(f, i).kind != TK_EOF {
+            i = i + 1;
+        }
+        if tok(f, i).kind == TK_EOF && first == i {
+            return;
+        }
+        unterm = emit_line(f, first, i, unterm);
+        if tok(f, i).kind == TK_EOF {
+            return;
+        }
+        i = i + 1;
+    }
+}
+
+I64 visual_width(Fm* f, Line* ln, I64 upto) {
+    I64 n = 0;
+    for I64 i = 0; i < upto; i++ {
+        if ((f.work.b[ln.off + i] as I64) & 192) != 128 {
+            n = n + 1;
+        }
+    }
+    return n;
+}
+
+I64 pads_before(Fm* f, I64 li, I64 c) {
+    I64 s = 0;
+    for I64 k = 0; k < c; k++ {
+        s = s + f.pads[li * MAXCUT + k];
+    }
+    return s;
+}
+
+I64 cell_width(Fm* f, I64 li, I64 c) {
+    return visual_width(f, f.lines + li, f.cuts[li * MAXCUT + c]) + pads_before(f, li, c);
+}
+
+U0 align_column(Fm* f, I64 i, I64 j, I64 c) {
+    I64 w = 0;
+    for I64 l = i; l < j; l++ {
+        I64 pw = cell_width(f, l, c);
+        if pw > w {
+            w = pw;
+        }
+    }
+    for I64 l = i; l < j; l++ {
+        f.pads[l * MAXCUT + c] = w - cell_width(f, l, c);
+    }
+}
+
+I64 comment_column(Fm* f, I64 li) {
+    Line* ln = f.lines + li;
+    return visual_width(f, ln, ln.ccut) + pads_before(f, li, ln.ncut);
+}
+
+U0 align_comments(Fm* f, I64 i, I64 j) {
+    I64 w = 0;
+    for I64 l = i; l < j; l++ {
+        I64 pw = comment_column(f, l);
+        if pw > w {
+            w = pw;
+        }
+    }
+    for I64 l = i; l < j; l++ {
+        Line* ln = f.lines + l;
+        ln.cpad = w - comment_column(f, l);
+    }
+}
+
+Bool same_run(Line* a, Line* b) {
+    return b.kind == a.kind && b.ind == a.ind && b.ncut == a.ncut;
+}
+
+U0 align_all(Fm* f) {
+    I64 i = 0;
+    for i < f.nlines {
+        Line* a = f.lines + i;
+        I64 j = i + 1;
+        if a.kind != LK_NONE && a.ncut > 0 {
+            for j < f.nlines && same_run(a, f.lines + j) {
+                j = j + 1;
+            }
+            if j - i >= 2 {
+                for I64 c = 0; c < a.ncut; c++ {
+                    align_column(f, i, j, c);
+                }
+            }
+        }
+        i = j;
+    }
+    i = 0;
+    for i < f.nlines {
+        Line* a = f.lines + i;
+        I64 j = i + 1;
+        if a.ccut >= 0 {
+            for j < f.nlines && (f.lines + j).ccut >= 0 && (f.lines + j).ind == a.ind {
+                j = j + 1;
+            }
+            if j - i >= 2 {
+                align_comments(f, i, j);
+            }
+        }
+        i = j;
+    }
+}
+
+U0 render(Fm* f) {
+    I64 last = f.nlines - 1;
+    for last >= 0 && (f.lines + last).n == 0 {
+        last = last - 1;
+    }
+    for I64 l = 0; l <= last; l++ {
+        Line* ln = f.lines + l;
+        if ln.n > 0 {
+            buf_spaces(f.out, ln.ind);
+            I64 pos = 0;
+            for I64 c = 0; c < ln.ncut; c++ {
+                I64 cut = f.cuts[l * MAXCUT + c];
+                buf_s(f.out, f.work.b[ln.off + pos : ln.off + cut]);
+                buf_spaces(f.out, f.pads[l * MAXCUT + c]);
+                pos = cut;
+            }
+            if ln.ccut >= 0 {
+                buf_s(f.out, f.work.b[ln.off + pos : ln.off + ln.ccut]);
+                buf_spaces(f.out, ln.cpad);
+                pos = ln.ccut;
+            }
+            buf_s(f.out, f.work.b[ln.off + pos : ln.off + ln.n]);
+        }
+        buf_c(f.out, '\n');
+    }
+}

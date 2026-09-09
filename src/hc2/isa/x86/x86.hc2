@@ -365,13 +365,13 @@ const I64 OPC_MOVSB    = 0xa4;
 const I64 OPC_CDQ      = 0x99;
 const I64 OPC_REP      = 0xf3;
 
-const I64 OPC_TWOBYTE  = 0x0f;
+const I64 OPC_TWOBYTE   = 0x0f;
 const I64 OPC_JCC_SHORT = 0x70;
-const I64 OPC_JCC_NEAR = 0x80;
-const I64 OPC_SETCC    = 0x90;
+const I64 OPC_JCC_NEAR  = 0x80;
+const I64 OPC_SETCC     = 0x90;
 const I64 OPC_JMP_SHORT = 0xeb;
-const I64 OPC_JMP_NEAR = 0xe9;
-const I64 OPC_CALL     = 0xe8;
+const I64 OPC_JMP_NEAR  = 0xe9;
+const I64 OPC_CALL      = 0xe8;
 
 const I64 OPC_PUSH_R   = 0x50;
 const I64 OPC_POP_R    = 0x58;
@@ -382,37 +382,37 @@ const I64 OPC_REX      = 0x40;
 const I64 OPC_REX_W    = 0x48;
 const I64 OPC_PFX_16   = 0x66;
 
-const I64 OPC_UNARY    = 0xf7;
-const I64 EXT_NOT      = 2;
-const I64 EXT_NEG      = 3;
-const I64 EXT_MUL      = 4;
-const I64 EXT_IMUL     = 5;
-const I64 EXT_DIV      = 6;
-const I64 EXT_IDIV     = 7;
-const I64 OPC_INCDEC   = 0xff;
-const I64 EXT_INC      = 0;
-const I64 EXT_DEC      = 1;
+const I64 OPC_UNARY  = 0xf7;
+const I64 EXT_NOT    = 2;
+const I64 EXT_NEG    = 3;
+const I64 EXT_MUL    = 4;
+const I64 EXT_IMUL   = 5;
+const I64 EXT_DIV    = 6;
+const I64 EXT_IDIV   = 7;
+const I64 OPC_INCDEC = 0xff;
+const I64 EXT_INC    = 0;
+const I64 EXT_DEC    = 1;
 
-const I64 OPC_MOV_RM_R = 0x89;
-const I64 OPC_MOV_R_RM = 0x8b;
-const I64 OPC_MOV_RM_I = 0xc7;
+const I64 OPC_MOV_RM_R  = 0x89;
+const I64 OPC_MOV_R_RM  = 0x8b;
+const I64 OPC_MOV_RM_I  = 0xc7;
 const I64 OPC_MOV_R32_I = 0xb8;
-const I64 OPC_LEA      = 0x8d;
-const I64 OPC_MOVZX    = 0xb6;
-const I64 OPC_MOVSX    = 0xbe;
-const I64 OPC_MOVSXD   = 0x63;
+const I64 OPC_LEA       = 0x8d;
+const I64 OPC_MOVZX     = 0xb6;
+const I64 OPC_MOVSX     = 0xbe;
+const I64 OPC_MOVSXD    = 0x63;
 const I64 OPC_TEST_RM_R = 0x85;
 const I64 OPC_TEST_RM_I = 0xf7;
 const I64 OPC_IMUL_R_RM = 0xaf;
-const I64 OPC_IMUL_I8  = 0x6b;
-const I64 OPC_IMUL_I32 = 0x69;
-const I64 OPC_SHIFT_CL = 0xd3;
-const I64 OPC_SHIFT_I  = 0xc1;
-const I64 EXT_SHL      = 4;
-const I64 EXT_SHR      = 5;
-const I64 EXT_SAR      = 7;
-const I64 OPC_GRP1_I8  = 0x83;
-const I64 OPC_GRP1_I32 = 0x81;
+const I64 OPC_IMUL_I8   = 0x6b;
+const I64 OPC_IMUL_I32  = 0x69;
+const I64 OPC_SHIFT_CL  = 0xd3;
+const I64 OPC_SHIFT_I   = 0xc1;
+const I64 EXT_SHL       = 4;
+const I64 EXT_SHR       = 5;
+const I64 EXT_SAR       = 7;
+const I64 OPC_GRP1_I8   = 0x83;
+const I64 OPC_GRP1_I32  = 0x81;
 
 I64 jcc_code(U8* m) {
     if str.eq(m, "jo") {
@@ -565,8 +565,8 @@ const I64 F_SHIFT  = 12;
 const I64 F_IMUL_I = 13;
 const I64 F_MOV_RI = 14;
 
-const I64 IF_0F    = 1;
-const I64 IF_W     = 2;
+const I64 IF_0F = 1;
+const I64 IF_W  = 2;
 
 struct Insn {
     U8* name;
@@ -579,73 +579,73 @@ struct Insn {
 const I64 NINSN = 60;
 
 const Insn TABLE[NINSN] = {
-    {"syscall", F_NONE,   0x05,  -1, IF_0F},
-    {"leave",  F_NONE,   0xc9,  -1, 0},
-    {"ret",    F_NONE,   0xc3,  -1, 0},
-    {"iretq",  F_NONE,   0xcf,  -1, IF_W},
-    {"cqo",    F_NONE,   0x99,  -1, IF_W},
-    {"cdq",    F_NONE,   0x99,  -1, 0},
-    {"nop",    F_NONE,   0x90,  -1, 0},
-    {"movsb",  F_NONE,   0xa4,  -1, 0},
-    {"mov",    F_MOV_RI, 0xb8,  -1, 0},
-    {"mov",    F_RM_I,   0xc7,  0,     0},
-    {"mov",    F_R_RM,   0x8b,  -1, 0},
-    {"mov",    F_RM_R,   0x89,  -1, 0},
-    {"movabs", F_MOVABS, 0xb8,  -1, IF_W},
-    {"lea",    F_R_RM,   0x8d,  -1, 0},
-    {"movzx",  F_R_RM,   0xb6,  -1, IF_0F},
-    {"movsx",  F_R_RM,   0xbe,  -1, IF_0F},
-    {"movsxd", F_R_RM,   0x63,  -1, 0},
-    {"add",    F_RM_I,   0x81,  0,     0},
-    {"add",    F_R_RM,   0x03,  -1, 0},
-    {"add",    F_RM_R,   0x01,  -1, 0},
-    {"or",     F_RM_I,   0x81,  1,     0},
-    {"or",     F_R_RM,   0x0b,  -1, 0},
-    {"or",     F_RM_R,   0x09,  -1, 0},
-    {"and",    F_RM_I,   0x81,  4,     0},
-    {"and",    F_R_RM,   0x23,  -1, 0},
-    {"and",    F_RM_R,   0x21,  -1, 0},
-    {"sub",    F_RM_I,   0x81,  5,     0},
-    {"sub",    F_R_RM,   0x2b,  -1, 0},
-    {"sub",    F_RM_R,   0x29,  -1, 0},
-    {"xor",    F_RM_I,   0x81,  6,     0},
-    {"xor",    F_R_RM,   0x33,  -1, 0},
-    {"xor",    F_RM_R,   0x31,  -1, 0},
-    {"cmp",    F_RM_I,   0x81,  7,     0},
-    {"cmp",    F_R_RM,   0x3b,  -1, 0},
-    {"cmp",    F_RM_R,   0x39,  -1, 0},
-    {"test",   F_RM_I,   0xf7,  0,     0},
-    {"test",   F_RM_R,   0x85,  -1, 0},
-    {"xchg",   F_RM_R,   0x87,  -1, 0},
-    {"imul",   F_IMUL_I, 0x69,  -1, 0},
-    {"imul",   F_R_RM,   0xaf,  -1, IF_0F},
-    {"imul",   F_M,      0xf7,  5,     0},
-    {"neg",    F_M,      0xf7,  3,     0},
-    {"not",    F_M,      0xf7,  2,     0},
-    {"mul",    F_M,      0xf7,  4,     0},
-    {"div",    F_M,      0xf7,  6,     0},
-    {"idiv",   F_M,      0xf7,  7,     0},
-    {"inc",    F_M,      0xff,  0,     0},
-    {"dec",    F_M,      0xff,  1,     0},
-    {"shl",    F_SHIFT,  0xd3,  4,     0},
-    {"shr",    F_SHIFT,  0xd3,  5,     0},
-    {"sar",    F_SHIFT,  0xd3,  7,     0},
-    {"push",   F_PLUSR,  0x50,  -1, 0},
-    {"pop",    F_PLUSR,  0x58,  -1, 0},
-    {"call",   F_REL,    0xe8,  -1, 0},
-    {"jmp",    F_JMP,    0xeb,  0xe9,  0},
-    {"j",      F_JCC,    0x70,  0x80,  0},
-    {"set",    F_SETCC,  0x90,  -1, IF_0F},
-    {"hlt",    F_NONE,   0xf4,  -1, 0},
-    {"cli",    F_NONE,   0xfa,  -1, 0},
-    {"sti",    F_NONE,   0xfb,  -1, 0}
+    {"syscall", F_NONE,   0x05, -1,   IF_0F},
+    {"leave",   F_NONE,   0xc9, -1,   0},
+    {"ret",     F_NONE,   0xc3, -1,   0},
+    {"iretq",   F_NONE,   0xcf, -1,   IF_W},
+    {"cqo",     F_NONE,   0x99, -1,   IF_W},
+    {"cdq",     F_NONE,   0x99, -1,   0},
+    {"nop",     F_NONE,   0x90, -1,   0},
+    {"movsb",   F_NONE,   0xa4, -1,   0},
+    {"mov",     F_MOV_RI, 0xb8, -1,   0},
+    {"mov",     F_RM_I,   0xc7, 0,    0},
+    {"mov",     F_R_RM,   0x8b, -1,   0},
+    {"mov",     F_RM_R,   0x89, -1,   0},
+    {"movabs",  F_MOVABS, 0xb8, -1,   IF_W},
+    {"lea",     F_R_RM,   0x8d, -1,   0},
+    {"movzx",   F_R_RM,   0xb6, -1,   IF_0F},
+    {"movsx",   F_R_RM,   0xbe, -1,   IF_0F},
+    {"movsxd",  F_R_RM,   0x63, -1,   0},
+    {"add",     F_RM_I,   0x81, 0,    0},
+    {"add",     F_R_RM,   0x03, -1,   0},
+    {"add",     F_RM_R,   0x01, -1,   0},
+    {"or",      F_RM_I,   0x81, 1,    0},
+    {"or",      F_R_RM,   0x0b, -1,   0},
+    {"or",      F_RM_R,   0x09, -1,   0},
+    {"and",     F_RM_I,   0x81, 4,    0},
+    {"and",     F_R_RM,   0x23, -1,   0},
+    {"and",     F_RM_R,   0x21, -1,   0},
+    {"sub",     F_RM_I,   0x81, 5,    0},
+    {"sub",     F_R_RM,   0x2b, -1,   0},
+    {"sub",     F_RM_R,   0x29, -1,   0},
+    {"xor",     F_RM_I,   0x81, 6,    0},
+    {"xor",     F_R_RM,   0x33, -1,   0},
+    {"xor",     F_RM_R,   0x31, -1,   0},
+    {"cmp",     F_RM_I,   0x81, 7,    0},
+    {"cmp",     F_R_RM,   0x3b, -1,   0},
+    {"cmp",     F_RM_R,   0x39, -1,   0},
+    {"test",    F_RM_I,   0xf7, 0,    0},
+    {"test",    F_RM_R,   0x85, -1,   0},
+    {"xchg",    F_RM_R,   0x87, -1,   0},
+    {"imul",    F_IMUL_I, 0x69, -1,   0},
+    {"imul",    F_R_RM,   0xaf, -1,   IF_0F},
+    {"imul",    F_M,      0xf7, 5,    0},
+    {"neg",     F_M,      0xf7, 3,    0},
+    {"not",     F_M,      0xf7, 2,    0},
+    {"mul",     F_M,      0xf7, 4,    0},
+    {"div",     F_M,      0xf7, 6,    0},
+    {"idiv",    F_M,      0xf7, 7,    0},
+    {"inc",     F_M,      0xff, 0,    0},
+    {"dec",     F_M,      0xff, 1,    0},
+    {"shl",     F_SHIFT,  0xd3, 4,    0},
+    {"shr",     F_SHIFT,  0xd3, 5,    0},
+    {"sar",     F_SHIFT,  0xd3, 7,    0},
+    {"push",    F_PLUSR,  0x50, -1,   0},
+    {"pop",     F_PLUSR,  0x58, -1,   0},
+    {"call",    F_REL,    0xe8, -1,   0},
+    {"jmp",     F_JMP,    0xeb, 0xe9, 0},
+    {"j",       F_JCC,    0x70, 0x80, 0},
+    {"set",     F_SETCC,  0x90, -1,   IF_0F},
+    {"hlt",     F_NONE,   0xf4, -1,   0},
+    {"cli",     F_NONE,   0xfa, -1,   0},
+    {"sti",     F_NONE,   0xfb, -1,   0}
 };
 
-I64 opc(I64 i)   {
+I64 opc(I64 i) {
     return TABLE[i].opc;
 }
 
-I64 ext(I64 i)   {
+I64 ext(I64 i) {
     return TABLE[i].ext;
 }
 

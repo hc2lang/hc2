@@ -1,4 +1,3 @@
-
 import "heap";
 import "hc2/diag";
 import "str";
@@ -62,125 +61,125 @@ const I64 N_TKIND = 19;
 const I64 N_TSID  = 20;
 const I64 N_FID   = 21;
 
-const I64 VAR_OFF     = 22;
-const I64 GVAR_G      = 22;
-const I64 BIN_ESZ     = 22;
-const I64 BIN_SIDE    = 26;
-const I64 BIN_CLS     = 27;
-const I64 INDEX_OFF   = 22;
-const I64 INDEX_G     = 22;
-const I64 INDEX_DIM   = 23;
-const I64 INDEX_KIND  = 24;
-const I64 INDEX_ESZ   = 25;
-const I64 SLICE_ESZ   = 22;
-const I64 FIELD_MODE  = 22;
-const I64 FIELD_BASE  = 23;
-const I64 FIELD_OFF   = 24;
-const I64 FIELD_SIZE  = 25;
-const I64 FIELD_W     = 26;
-const I64 ADDR_OFF    = 22;
-const I64 ADDR_G      = 22;
-const I64 ADDR_FN     = 22;
-const I64 ADDR_LEN    = 23;
-const I64 CALL_FN     = 22;
-const I64 CALL_VOFF   = 24;
-const I64 CALL_VCNT   = 25;
-const I64 CALL_VESZ   = 26;
-const I64 CALL_BIG    = 27;
-const I64 PRINT_STR   = 27;
-const I64 INC_OFF     = 22;
-const I64 INC_KIND    = 24;
-const I64 DECL_OFF    = 22;
-const I64 DECL_CLS    = 23;
-const I64 DECL_ESZ    = 24;
+const I64 VAR_OFF       = 22;
+const I64 GVAR_G        = 22;
+const I64 BIN_ESZ       = 22;
+const I64 BIN_SIDE      = 26;
+const I64 BIN_CLS       = 27;
+const I64 INDEX_OFF     = 22;
+const I64 INDEX_G       = 22;
+const I64 INDEX_DIM     = 23;
+const I64 INDEX_KIND    = 24;
+const I64 INDEX_ESZ     = 25;
+const I64 SLICE_ESZ     = 22;
+const I64 FIELD_MODE    = 22;
+const I64 FIELD_BASE    = 23;
+const I64 FIELD_OFF     = 24;
+const I64 FIELD_SIZE    = 25;
+const I64 FIELD_W       = 26;
+const I64 ADDR_OFF      = 22;
+const I64 ADDR_G        = 22;
+const I64 ADDR_FN       = 22;
+const I64 ADDR_LEN      = 23;
+const I64 CALL_FN       = 22;
+const I64 CALL_VOFF     = 24;
+const I64 CALL_VCNT     = 25;
+const I64 CALL_VESZ     = 26;
+const I64 CALL_BIG      = 27;
+const I64 PRINT_STR     = 27;
+const I64 INC_OFF       = 22;
+const I64 INC_KIND      = 24;
+const I64 DECL_OFF      = 22;
+const I64 DECL_CLS      = 23;
+const I64 DECL_ESZ      = 24;
 const I64 DECL_CALLINIT = 25;
-const I64 DECL_ECLS   = 26;
-const I64 DECL_ZERO   = 27;
-const I64 RET_OFF     = 22;
-const I64 RET_SIZE    = 23;
-const I64 SW_LO       = 22;
-const I64 SW_SPAN     = 23;
-const I64 CASE_LBL    = 22;
-const I64 CVAL_HI     = 22;
-const I64 GLOB_DONE   = 22;
-const I64 GLOB_BUSY   = 23;
-const I64 GLOB_ESZ    = 24;
-const I64 GLOB_ECLS   = 26;
-const I64 FN_FRAME    = 22;
-const I64 FN_SRET     = 23;
-const I64 FN_BIG      = 24;
-const I64 FN_SIGHASH  = 25;
-const I64 FN_VARIADIC = 26;
-const I64 FN_VKIND    = 27;
-const I64 PARAM_OFF   = 22;
-const I64 SDEF_SIZE   = 22;
-const I64 SDEF_UNSAFE = 23;
-const I64 FDEF_OFF    = 22;
-const I64 FDEF_SIZE   = 23;
-const I64 ASM_CLOB    = 22;
-const I64 AOP_OFF     = 22;
-const I64 AOP_SIZE    = 23;
+const I64 DECL_ECLS     = 26;
+const I64 DECL_ZERO     = 27;
+const I64 RET_OFF       = 22;
+const I64 RET_SIZE      = 23;
+const I64 SW_LO         = 22;
+const I64 SW_SPAN       = 23;
+const I64 CASE_LBL      = 22;
+const I64 CVAL_HI       = 22;
+const I64 GLOB_DONE     = 22;
+const I64 GLOB_BUSY     = 23;
+const I64 GLOB_ESZ      = 24;
+const I64 GLOB_ECLS     = 26;
+const I64 FN_FRAME      = 22;
+const I64 FN_SRET       = 23;
+const I64 FN_BIG        = 24;
+const I64 FN_SIGHASH    = 25;
+const I64 FN_VARIADIC   = 26;
+const I64 FN_VKIND      = 27;
+const I64 PARAM_OFF     = 22;
+const I64 SDEF_SIZE     = 22;
+const I64 SDEF_UNSAFE   = 23;
+const I64 FDEF_OFF      = 22;
+const I64 FDEF_SIZE     = 23;
+const I64 ASM_CLOB      = 22;
+const I64 AOP_OFF       = 22;
+const I64 AOP_SIZE      = 23;
 
-const I64 ND_NUM   = 1;
-const I64 ND_STR   = 2;
-const I64 ND_VAR   = 3;
-const I64 ND_BIN   = 4;
-const I64 ND_NEG   = 5;
-const I64 ND_INDEX = 6;
-const I64 ND_SLICE = 7;
-const I64 ND_CALL  = 8;
-const I64 ND_FIELD = 9;
-const I64 ND_ADDR  = 10;
-const I64 ND_AS    = 11;
+const I64 ND_NUM    = 1;
+const I64 ND_STR    = 2;
+const I64 ND_VAR    = 3;
+const I64 ND_BIN    = 4;
+const I64 ND_NEG    = 5;
+const I64 ND_INDEX  = 6;
+const I64 ND_SLICE  = 7;
+const I64 ND_CALL   = 8;
+const I64 ND_FIELD  = 9;
+const I64 ND_ADDR   = 10;
+const I64 ND_AS     = 11;
 const I64 ND_SIZEOF = 12;
 const I64 ND_ASSIGN = 13;
 const I64 ND_INCDEC = 14;
-const I64 ND_DECL  = 15;
-const I64 ND_IF    = 16;
-const I64 ND_FOR   = 17;
-const I64 ND_BLOCK = 18;
+const I64 ND_DECL   = 15;
+const I64 ND_IF     = 16;
+const I64 ND_FOR    = 17;
+const I64 ND_BLOCK  = 18;
 const I64 ND_RETURN = 19;
-const I64 ND_PRINT = 20;
-const I64 ND_EXPR  = 21;
-const I64 ND_DEFER = 22;
-const I64 ND_BREAK = 23;
-const I64 ND_CONT  = 24;
-const I64 ND_FN    = 25;
-const I64 ND_PARAM = 26;
-const I64 ND_SDEF  = 27;
-const I64 ND_FDEF  = 28;
+const I64 ND_PRINT  = 20;
+const I64 ND_EXPR   = 21;
+const I64 ND_DEFER  = 22;
+const I64 ND_BREAK  = 23;
+const I64 ND_CONT   = 24;
+const I64 ND_FN     = 25;
+const I64 ND_PARAM  = 26;
+const I64 ND_SDEF   = 27;
+const I64 ND_FDEF   = 28;
 const I64 ND_IMPORT = 29;
-const I64 ND_ILIST = 30;
+const I64 ND_ILIST  = 30;
 const I64 ND_GLOBAL = 34;
-const I64 ND_GVAR  = 35;
-const I64 ND_ASM   = 31;
-const I64 ND_AINS  = 32;
-const I64 ND_AOP   = 33;
-const I64 ND_SIG   = 36;
-const I64 ND_NULL  = 37;
+const I64 ND_GVAR   = 35;
+const I64 ND_ASM    = 31;
+const I64 ND_AINS   = 32;
+const I64 ND_AOP    = 33;
+const I64 ND_SIG    = 36;
+const I64 ND_NULL   = 37;
 const I64 ND_SWITCH = 38;
-const I64 ND_CASE  = 39;
-const I64 ND_CVAL  = 40;
-const I64 ND_FALLT = 41;
+const I64 ND_CASE   = 39;
+const I64 ND_CVAL   = 40;
+const I64 ND_FALLT  = 41;
 
-const I64 OP_ADD = 1;
-const I64 OP_SUB = 2;
-const I64 OP_MUL = 3;
-const I64 OP_DIV = 4;
-const I64 OP_MOD = 5;
-const I64 OP_LT  = 6;
-const I64 OP_LE  = 7;
-const I64 OP_GT  = 8;
-const I64 OP_GE  = 9;
-const I64 OP_EQ  = 10;
-const I64 OP_NE  = 11;
-const I64 OP_SHL = 12;
-const I64 OP_SHR = 13;
-const I64 OP_AND = 14;
-const I64 OP_XOR = 15;
-const I64 OP_OR  = 16;
+const I64 OP_ADD  = 1;
+const I64 OP_SUB  = 2;
+const I64 OP_MUL  = 3;
+const I64 OP_DIV  = 4;
+const I64 OP_MOD  = 5;
+const I64 OP_LT   = 6;
+const I64 OP_LE   = 7;
+const I64 OP_GT   = 8;
+const I64 OP_GE   = 9;
+const I64 OP_EQ   = 10;
+const I64 OP_NE   = 11;
+const I64 OP_SHL  = 12;
+const I64 OP_SHR  = 13;
+const I64 OP_AND  = 14;
+const I64 OP_XOR  = 15;
+const I64 OP_OR   = 16;
 const I64 OP_LAND = 17;
-const I64 OP_LOR = 18;
+const I64 OP_LOR  = 18;
 
 struct Ast {
     I64* iv;
@@ -296,14 +295,37 @@ U0 ns(Ast* t, I64 id, I64 f, I64 v) {
     t.iv[id * NW + f] = v;
 }
 
-I64 nkind(Ast* t, I64 id) { return ng(t, id, N_KIND); }
-I64 nop(Ast* t, I64 id)   { return ng(t, id, N_OP); }
-I64 nline(Ast* t, I64 id) { return ng(t, id, N_LINE); }
-I64 na(Ast* t, I64 id)    { return ng(t, id, N_A); }
-I64 nb(Ast* t, I64 id)    { return ng(t, id, N_B); }
-I64 nc(Ast* t, I64 id)    { return ng(t, id, N_C); }
-I64 nd(Ast* t, I64 id)    { return ng(t, id, N_D); }
-I64 nnext(Ast* t, I64 id) { return ng(t, id, N_NEXT); }
+I64 nkind(Ast* t, I64 id) {
+    return ng(t, id, N_KIND);
+}
+
+I64 nop(Ast* t, I64 id) {
+    return ng(t, id, N_OP);
+}
+
+I64 nline(Ast* t, I64 id) {
+    return ng(t, id, N_LINE);
+}
+
+I64 na(Ast* t, I64 id) {
+    return ng(t, id, N_A);
+}
+
+I64 nb(Ast* t, I64 id) {
+    return ng(t, id, N_B);
+}
+
+I64 nc(Ast* t, I64 id) {
+    return ng(t, id, N_C);
+}
+
+I64 nd(Ast* t, I64 id) {
+    return ng(t, id, N_D);
+}
+
+I64 nnext(Ast* t, I64 id) {
+    return ng(t, id, N_NEXT);
+}
 
 I64 nd_unary(Ast* t, I64 kind, I64 line, I64 col, I64 operand) {
     I64 n = node_new(t, kind, line, col);
@@ -461,10 +483,14 @@ const I64 SK_F64  = 11;
 
 I64 sk_size(I64 k) {
     switch k {
-        case SK_U0:            return 0;
-        case SK_BOOL, SK_I8, SK_U8: return 1;
-        case SK_I16, SK_U16:   return 2;
-        case SK_I32, SK_U32:   return 4;
+        case SK_U0:
+            return 0;
+        case SK_BOOL, SK_I8, SK_U8:
+            return 1;
+        case SK_I16, SK_U16:
+            return 2;
+        case SK_I32, SK_U32:
+            return 4;
     }
     return 8;
 }

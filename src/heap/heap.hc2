@@ -1,8 +1,8 @@
 import "rt";
 import "sys";
 
-I64 _cur = 0;
-I64 _end = 0;
+I64 _cur      = 0;
+I64 _end      = 0;
 I64 _free[32] = {};
 
 const I64 _HEAP = 256 * 1024 * 1024;

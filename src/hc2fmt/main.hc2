@@ -1,0 +1,336 @@
+import "fmt";
+import "heap";
+import "rt";
+import "str";
+import "sys";
+
+const I64 MODE_PRINT = 0;
+const I64 MODE_LIST  = 1;
+const I64 MODE_WRITE = 2;
+
+U0 usage() {
+    "hc2fmt [-l] [-w] [path ...]\n";
+    "  formats hc2 source; a directory is walked for its .hc2 files\n";
+    "  -l  list the files whose formatting differs\n";
+    "  -w  write each result back to its file instead of printing it\n";
+    "  no path: format standard input\n";
+}
+
+U0 ewrite(U8* s) {
+    sys.write(2, s);
+}
+
+U0 report(U8* path, I64 line, U8* msg) {
+    ewrite(path);
+    if line > 0 {
+        ewrite(":");
+        ewrite(fmt.dec(line));
+    }
+    ewrite(": ");
+    ewrite(msg);
+    ewrite("\n");
+}
+
+U0 write_all(I64 fd, U8* bytes) {
+    I64 at = 0;
+    for at < bytes.len {
+        I64 n = sys.write(fd, bytes[at : bytes.len]);
+        if n <= 0 {
+            return;
+        }
+        at = at + n;
+    }
+}
+
+Bool read_all(I64 fd, Buf* b) {
+    for true {
+        if b.n == b.cap {
+            buf_grow(b, b.cap);
+        }
+        I64 n = sys.read(fd, b.b[b.n : b.cap]);
+        if n < 0 {
+            return false;
+        }
+        if n == 0 {
+            return true;
+        }
+        b.n = b.n + n;
+    }
+    return true;
+}
+
+U8* path_join(U8* a, U8* b) {
+    I64 n = a.len + 1 + b.len;
+    U8* p = heap.alloc(n + 1);
+    I64 k = 0;
+    for I64 i = 0; i < a.len; i++ {
+        p[k] = a[i];
+        k = k + 1;
+    }
+    p[k] = '/';
+    k = k + 1;
+    for I64 i = 0; i < b.len; i++ {
+        p[k] = b[i];
+        k = k + 1;
+    }
+    return p[0 : n];
+}
+
+Bool ends_hc2(U8* s) {
+    if s.len < 5 {
+        return false;
+    }
+    I64 b = s.len - 4;
+    return s[b] == '.' && s[b + 1] == 'h' && s[b + 2] == 'c' && s[b + 3] == '2';
+}
+
+Bool is_dir(U8* path) {
+    I64 fd = sys.open(str.cstr(path));
+    if fd < 0 {
+        return false;
+    }
+    U8* probe = heap.alloc(1024);
+    I64 got = sys.getdents(fd, probe);
+    sys.close(fd);
+    heap.free(probe);
+    return got >= 0;
+}
+
+I64 dent_reclen(U8* b, I64 o) {
+    return (b[o + sys.DENT_RECLEN_AT] as I64) | ((b[o + sys.DENT_RECLEN_AT + 1] as I64) << 8);
+}
+
+I64 dent_namelen(U8* b, I64 o, I64 lim) {
+    I64 s = o + sys.dent_nameoff();
+    I64 i = s;
+    for i < lim {
+        if b[i] == 0 {
+            return i - s;
+        }
+        i = i + 1;
+    }
+    return i - s;
+}
+
+I64 tok_kind_at(Lx* lx, I64 i) {
+    Tok* t = lx.toks + i;
+    return t.kind;
+}
+
+Bool same_tokens(Lx* a, Lx* b) {
+    if b.errline != 0 {
+        return false;
+    }
+    I64 i = 0;
+    I64 j = 0;
+    for true {
+        for tok_kind_at(a, i) == TK_NL {
+            i = i + 1;
+        }
+        for tok_kind_at(b, j) == TK_NL {
+            j = j + 1;
+        }
+        Tok* x = a.toks + i;
+        Tok* y = b.toks + j;
+        if x.kind != y.kind {
+            return false;
+        }
+        if x.kind == TK_EOF {
+            return true;
+        }
+        if str.eq(tok_text(a, x), tok_text(b, y)) == false {
+            return false;
+        }
+        i = i + 1;
+        j = j + 1;
+    }
+    return true;
+}
+
+I64 do_source(U8* path, U8* src, I64 mode) {
+    Lx* lx = lx_new(src);
+    lex_all(lx);
+    if lx.errline != 0 {
+        report(path, lx.errline, lx.errmsg);
+        lx_free(lx);
+        return 1;
+    }
+    Fm* f = fm_new(path, lx);
+    U8* out = format_source(f);
+    Lx* again = lx_new(out);
+    lex_all(again);
+    I64 bad = 0;
+    if same_tokens(lx, again) == false {
+        report(path, 0, "hc2fmt bug: the result does not lex to the same tokens, file left untouched");
+        bad = 1;
+    } else if mode == MODE_LIST {
+        if str.eq(out, src) == false {
+            "%s\n", path;
+        }
+    } else if mode == MODE_WRITE {
+        if str.eq(out, src) == false {
+            I64 fd = sys.create(str.cstr(path));
+            if fd < 0 {
+                report(path, 0, "cannot write");
+                bad = 1;
+            } else {
+                write_all(fd, out);
+                sys.close(fd);
+            }
+        }
+    } else {
+        write_all(1, out);
+    }
+    lx_free(again);
+    fm_free(f);
+    lx_free(lx);
+    return bad;
+}
+
+I64 do_path(U8* path, I64 mode) {
+    I64 fd = sys.open(str.cstr(path));
+    if fd < 0 {
+        report(path, 0, "cannot open");
+        return 1;
+    }
+    Buf* b = buf_new(1 << 16);
+    Bool ok = read_all(fd, b);
+    sys.close(fd);
+    if ok == false {
+        report(path, 0, "read failed");
+        return 1;
+    }
+    I64 bad = do_source(path, buf_bytes(b), mode);
+    buf_free(b);
+    return bad;
+}
+
+I64 walk_dir(U8* dir, I64 mode) {
+    I64 fd = sys.open(str.cstr(dir));
+    if fd < 0 {
+        report(dir, 0, "cannot open directory");
+        return 1;
+    }
+    U8* buf = heap.alloc(1 << 16);
+    U8* names = heap.alloc(1 << 16);
+    I64* noff = heap.alloc(1024 * sizeof(I64)) as I64*;
+    I64* nlen = heap.alloc(1024 * sizeof(I64)) as I64*;
+    I64 nn = 0;
+    I64 used = 0;
+    for true {
+        I64 got = sys.getdents(fd, buf);
+        if got <= 0 {
+            break;
+        }
+        I64 o = 0;
+        for o < got {
+            I64 rl = dent_reclen(buf, o);
+            if rl <= 0 {
+                break;
+            }
+            I64 ln = dent_namelen(buf, o, got);
+            I64 at = o + sys.dent_nameoff();
+            U8* nm = buf[at : at + ln];
+            if ln > 0 && nm[0] != '.' && nn < 1024 && used + ln <= names.len {
+                for I64 i = 0; i < ln; i++ {
+                    names[used + i] = nm[i];
+                }
+                noff[nn] = used;
+                nlen[nn] = ln;
+                used = used + ln;
+                nn = nn + 1;
+            }
+            o = o + rl;
+        }
+    }
+    sys.close(fd);
+    for I64 i = 1; i < nn; i++ {
+        I64 o = noff[i];
+        I64 l = nlen[i];
+        I64 j = i - 1;
+        for j >= 0 {
+            if str.less(names[noff[j] : noff[j] + nlen[j]], names[o : o + l]) {
+                break;
+            }
+            noff[j + 1] = noff[j];
+            nlen[j + 1] = nlen[j];
+            j = j - 1;
+        }
+        noff[j + 1] = o;
+        nlen[j + 1] = l;
+    }
+    I64 bad = 0;
+    for I64 i = 0; i < nn; i++ {
+        U8* name = names[noff[i] : noff[i] + nlen[i]];
+        U8* child = path_join(dir, name);
+        if is_dir(child) {
+            bad = bad + walk(child, mode);
+        } else if ends_hc2(name) {
+            bad = bad + do_path(child, mode);
+        }
+    }
+    heap.free(buf);
+    heap.free(names);
+    heap.free(noff as U8*);
+    heap.free(nlen as U8*);
+    return bad;
+}
+
+I64 walk(U8* path, I64 mode) {
+    if is_dir(path) {
+        return walk_dir(path, mode);
+    }
+    return do_path(path, mode);
+}
+
+I64 do_stdin() {
+    Buf* b = buf_new(1 << 16);
+    if read_all(0, b) == false {
+        report("<stdin>", 0, "read failed");
+        return 1;
+    }
+    return do_source("<stdin>", buf_bytes(b), MODE_PRINT);
+}
+
+Bool is_flag(U8* a) {
+    return a.len > 1 && a[0] == '-';
+}
+
+I32 main() {
+    I64 mode = MODE_PRINT;
+    I64 npaths = 0;
+    for I64 i = 1; i < rt.argc(); i++ {
+        U8* a = rt.arg(i);
+        if str.eq(a, "-l") {
+            mode = MODE_LIST;
+        } else if str.eq(a, "-w") {
+            mode = MODE_WRITE;
+        } else if str.eq(a, "-h") || str.eq(a, "--help") {
+            usage();
+            return 0;
+        } else if is_flag(a) {
+            report(a, 0, "unknown flag");
+            usage();
+            return 1;
+        } else {
+            npaths = npaths + 1;
+        }
+    }
+    if npaths == 0 {
+        if do_stdin() != 0 {
+            return 1;
+        }
+        return 0;
+    }
+    I64 bad = 0;
+    for I64 i = 1; i < rt.argc(); i++ {
+        U8* a = rt.arg(i);
+        if is_flag(a) == false {
+            bad = bad + walk(a, mode);
+        }
+    }
+    if bad > 0 {
+        return 1;
+    }
+    return 0;
+}

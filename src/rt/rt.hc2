@@ -1,19 +1,18 @@
-
 U0 hc2_print_lit(I64 addr, I64 len) {
     _emit_raw(addr, len);
 }
 
-const I64 TK_OOB      = 0;
-const I64 TK_GEN      = 1;
-const I64 TK_PERM     = 2;
-const I64 TK_DIV      = 3;
-const I64 TK_OOM      = 4;
-const I64 TK_NOTBASE  = 5;
-const I64 TK_DFREE    = 6;
-const I64 TK_IMMORTAL = 7;
-const I64 TK_NCALL    = 8;
-const I64 TK_BADFN    = 9;
-const I64 TK_NSTR     = 10;
+const I64 TK_OOB       = 0;
+const I64 TK_GEN       = 1;
+const I64 TK_PERM      = 2;
+const I64 TK_DIV       = 3;
+const I64 TK_OOM       = 4;
+const I64 TK_NOTBASE   = 5;
+const I64 TK_DFREE     = 6;
+const I64 TK_IMMORTAL  = 7;
+const I64 TK_NCALL     = 8;
+const I64 TK_BADFN     = 9;
+const I64 TK_NSTR      = 10;
 const I64 TK_CAPSTORE  = 11;
 const I64 TK_TYPED     = 12;
 const I64 TK_RETYPE    = 13;
@@ -23,22 +22,38 @@ const I64 TK_BYTEVIEW  = 15;
 U0 hc2_trap(I64 addr, I64 len, I64 kind) {
     _fail_raw(addr, len);
     switch kind {
-        case TK_OOB:      _fail("out of bounds\n");
-        case TK_GEN:      _fail("use after free\n");
-        case TK_PERM:     _fail("write to read-only\n");
-        case TK_DIV:      _fail("division by zero\n");
-        case TK_OOM:      _fail("out of memory\n");
-        case TK_NOTBASE:  _fail("free: not the allocation base\n");
-        case TK_DFREE:    _fail("double free\n");
-        case TK_IMMORTAL: _fail("free of immortal\n");
-        case TK_NCALL:    _fail("call through null\n");
-        case TK_BADFN:    _fail("not a function of this type\n");
-        case TK_CAPSTORE:  _fail("store into a capability\n");
-        case TK_TYPED:     _fail("cast to a type with capabilities needs a writable heap block\n");
-        case TK_RETYPE:    _fail("block already holds another type\n");
-        case TK_UNALIGNED: _fail("cast not at an element boundary\n");
-        case TK_BYTEVIEW:  _fail("a stack struct with capabilities cannot be viewed as bytes\n");
-        default:          _fail("print of null\n");
+        case TK_OOB:
+            _fail("out of bounds\n");
+        case TK_GEN:
+            _fail("use after free\n");
+        case TK_PERM:
+            _fail("write to read-only\n");
+        case TK_DIV:
+            _fail("division by zero\n");
+        case TK_OOM:
+            _fail("out of memory\n");
+        case TK_NOTBASE:
+            _fail("free: not the allocation base\n");
+        case TK_DFREE:
+            _fail("double free\n");
+        case TK_IMMORTAL:
+            _fail("free of immortal\n");
+        case TK_NCALL:
+            _fail("call through null\n");
+        case TK_BADFN:
+            _fail("not a function of this type\n");
+        case TK_CAPSTORE:
+            _fail("store into a capability\n");
+        case TK_TYPED:
+            _fail("cast to a type with capabilities needs a writable heap block\n");
+        case TK_RETYPE:
+            _fail("block already holds another type\n");
+        case TK_UNALIGNED:
+            _fail("cast not at an element boundary\n");
+        case TK_BYTEVIEW:
+            _fail("a stack struct with capabilities cannot be viewed as bytes\n");
+        default:
+            _fail("print of null\n");
     }
     _stop(134);
 }
@@ -106,6 +121,7 @@ U0 hc2_print_char(I64 c) {
     p[0] = c as U8;
     _emit(p);
 }
+
 union _F64b {
     I64 i;
     F64 f;

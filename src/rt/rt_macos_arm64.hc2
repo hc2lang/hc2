@@ -1,10 +1,9 @@
-
 import "sys";
 
 const I64 SYS_WRITE = 0x2000004;
-const I64 SYS_EXIT = 0x2000001;
-const I64 STDOUT = 1;
-const I64 STDERR = 2;
+const I64 SYS_EXIT  = 0x2000001;
+const I64 STDOUT    = 1;
+const I64 STDERR    = 2;
 
 I64 _sys3(I64 num, I64 a1, I64 a2, I64 a3) {
     I64 r = 0;

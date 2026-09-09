@@ -148,12 +148,10 @@ U0 parse_type(lex.Lexer* lx, I64 id) {
             } else {
                 rcls = ast.CLS_SCALAR;
             }
+        } else if star {
+            rcls = ast.CLS_STRUCTP;
         } else {
-            if star {
-                rcls = ast.CLS_STRUCTP;
-            } else {
-                rcls = ast.CLS_STRUCT;
-            }
+            rcls = ast.CLS_STRUCT;
         }
         ast.ns(t, sg, ast.N_DCLS, rcls);
         ast.ns(t, sg, ast.N_DKIND, sk);
@@ -200,12 +198,10 @@ U0 parse_type(lex.Lexer* lx, I64 id) {
         } else {
             cls = ast.CLS_SCALAR;
         }
+    } else if star {
+        cls = ast.CLS_STRUCTP;
     } else {
-        if star {
-            cls = ast.CLS_STRUCTP;
-        } else {
-            cls = ast.CLS_STRUCT;
-        }
+        cls = ast.CLS_STRUCT;
     }
     ast.ns(t, id, ast.N_DCLS, cls);
     ast.ns(t, id, ast.N_DKIND, sk);
@@ -227,50 +223,46 @@ I64 parse_postfix(lex.Lexer* lx, I64 base) {
             I64 nlen = lx.cur.tlen;
             lex.lex_next(lx);
             base = ast.nd_field(t, ln, co, base, noff, nlen);
-        } else {
-            if at_p(lx, "(") {
+        } else if at_p(lx, "(") {
+            I64 ln = lx.cur.line;
+            I64 co = lx.cur.col;
+            lex.lex_next(lx);
+            I64 head = 0;
+            I64 tail = 0;
+            for at_p(lx, ")") == false {
+                I64 a = parse_expr(lx);
+                if head == 0 {
+                    head = a;
+                } else {
+                    ast.ns(t, tail, ast.N_NEXT, a);
+                }
+                tail = a;
+                if at_p(lx, ",") {
+                    lex.lex_next(lx);
+                } else {
+                    break;
+                }
+            }
+            want_p(lx, ")");
+            base = ast.nd_call(t, ln, co, base, head);
+        } else if at_p(lx, "[") {
+            lex.lex_next(lx);
+            I64 lo = parse_expr(lx);
+            if at_p(lx, ":") {
                 I64 ln = lx.cur.line;
                 I64 co = lx.cur.col;
                 lex.lex_next(lx);
-                I64 head = 0;
-                I64 tail = 0;
-                for at_p(lx, ")") == false {
-                    I64 a = parse_expr(lx);
-                    if head == 0 {
-                        head = a;
-                    } else {
-                        ast.ns(t, tail, ast.N_NEXT, a);
-                    }
-                    tail = a;
-                    if at_p(lx, ",") {
-                        lex.lex_next(lx);
-                    } else {
-                        break;
-                    }
-                }
-                want_p(lx, ")");
-                base = ast.nd_call(t, ln, co, base, head);
+                I64 hi = parse_expr(lx);
+                want_p(lx, "]");
+                base = ast.nd_slice(t, ln, co, base, lo, hi);
             } else {
-                if at_p(lx, "[") {
-                    lex.lex_next(lx);
-                    I64 lo = parse_expr(lx);
-                    if at_p(lx, ":") {
-                        I64 ln = lx.cur.line;
-                        I64 co = lx.cur.col;
-                        lex.lex_next(lx);
-                        I64 hi = parse_expr(lx);
-                        want_p(lx, "]");
-                        base = ast.nd_slice(t, ln, co, base, lo, hi);
-                    } else {
-                        I64 ln = lx.cur.line;
-                        I64 co = lx.cur.col;
-                        want_p(lx, "]");
-                        base = ast.nd_index(t, ln, co, base, lo);
-                    }
-                } else {
-                    return base;
-                }
+                I64 ln = lx.cur.line;
+                I64 co = lx.cur.col;
+                want_p(lx, "]");
+                base = ast.nd_index(t, ln, co, base, lo);
             }
+        } else {
+            return base;
         }
     }
     return base;
@@ -378,15 +370,19 @@ I64 parse_mul(lex.Lexer* lx) {
         if at_p(lx, "*") {
             lex.lex_next(lx);
             n = mkbin(lx, ast.OP_MUL, n, parse_cast(lx));
-        } else { if at_p(lx, "/")  { lex.lex_next(lx); n = mkbin(lx, ast.OP_DIV, n, parse_cast(lx)); }
-        else { if at_p(lx, "%")  { lex.lex_next(lx); n = mkbin(lx, ast.OP_MOD, n, parse_cast(lx)); }
-        else { if at_p(lx, "<<") { lex.lex_next(lx); n = mkbin(lx, ast.OP_SHL, n, parse_cast(lx)); }
-        else { if at_p(lx, ">>") { lex.lex_next(lx); n = mkbin(lx, ast.OP_SHR, n, parse_cast(lx)); }
-        else { if at_p(lx, "&")  { lex.lex_next(lx); n = mkbin(lx, ast.OP_AND, n, parse_cast(lx)); }
-        else {
+        } else if at_p(lx, "/") {
+            lex.lex_next(lx); n = mkbin(lx, ast.OP_DIV, n, parse_cast(lx));
+        } else if at_p(lx, "%") {
+            lex.lex_next(lx); n = mkbin(lx, ast.OP_MOD, n, parse_cast(lx));
+        } else if at_p(lx, "<<") {
+            lex.lex_next(lx); n = mkbin(lx, ast.OP_SHL, n, parse_cast(lx));
+        } else if at_p(lx, ">>") {
+            lex.lex_next(lx); n = mkbin(lx, ast.OP_SHR, n, parse_cast(lx));
+        } else if at_p(lx, "&") {
+            lex.lex_next(lx); n = mkbin(lx, ast.OP_AND, n, parse_cast(lx));
+        } else {
             return n;
         }
-        } } } } }
     }
     return n;
 }
@@ -397,13 +393,15 @@ I64 parse_add(lex.Lexer* lx) {
         if at_p(lx, "+") {
             lex.lex_next(lx);
             n = mkbin(lx, ast.OP_ADD, n, parse_mul(lx));
-        } else { if at_p(lx, "-") { lex.lex_next(lx); n = mkbin(lx, ast.OP_SUB, n, parse_mul(lx)); }
-        else { if at_p(lx, "|") { lex.lex_next(lx); n = mkbin(lx, ast.OP_OR,  n, parse_mul(lx)); }
-        else { if at_p(lx, "^") { lex.lex_next(lx); n = mkbin(lx, ast.OP_XOR, n, parse_mul(lx)); }
-        else {
+        } else if at_p(lx, "-") {
+            lex.lex_next(lx); n = mkbin(lx, ast.OP_SUB, n, parse_mul(lx));
+        } else if at_p(lx, "|") {
+            lex.lex_next(lx); n = mkbin(lx, ast.OP_OR, n, parse_mul(lx));
+        } else if at_p(lx, "^") {
+            lex.lex_next(lx); n = mkbin(lx, ast.OP_XOR, n, parse_mul(lx));
+        } else {
             return n;
         }
-        } } }
     }
     return n;
 }
@@ -414,23 +412,17 @@ I64 parse_rel(lex.Lexer* lx) {
         if at_p(lx, "<=") {
             lex.lex_next(lx);
             n = mkbin(lx, ast.OP_LE, n, parse_add(lx));
+        } else if at_p(lx, ">=") {
+            lex.lex_next(lx);
+            n = mkbin(lx, ast.OP_GE, n, parse_add(lx));
+        } else if at_p(lx, "<") {
+            lex.lex_next(lx);
+            n = mkbin(lx, ast.OP_LT, n, parse_add(lx));
+        } else if at_p(lx, ">") {
+            lex.lex_next(lx);
+            n = mkbin(lx, ast.OP_GT, n, parse_add(lx));
         } else {
-            if at_p(lx, ">=") {
-                lex.lex_next(lx);
-                n = mkbin(lx, ast.OP_GE, n, parse_add(lx));
-            } else {
-                if at_p(lx, "<")  {
-                    lex.lex_next(lx);
-                    n = mkbin(lx, ast.OP_LT, n, parse_add(lx));
-                } else {
-                    if at_p(lx, ">")  {
-                        lex.lex_next(lx);
-                        n = mkbin(lx, ast.OP_GT, n, parse_add(lx));
-                    } else {
-                        return n;
-                    }
-                }
-            }
+            return n;
         }
     }
     return n;
@@ -442,13 +434,11 @@ I64 parse_eq(lex.Lexer* lx) {
         if at_p(lx, "==") {
             lex.lex_next(lx);
             n = mkbin(lx, ast.OP_EQ, n, parse_rel(lx));
+        } else if at_p(lx, "!=") {
+            lex.lex_next(lx);
+            n = mkbin(lx, ast.OP_NE, n, parse_rel(lx));
         } else {
-            if at_p(lx, "!=") {
-                lex.lex_next(lx);
-                n = mkbin(lx, ast.OP_NE, n, parse_rel(lx));
-            } else {
-                return n;
-            }
+            return n;
         }
     }
     return n;
@@ -885,7 +875,7 @@ I64 parse_switch(lex.Lexer* lx) {
         I64 bhead = 0;
         I64 btail = 0;
         for at_p(lx, "}") == false && at_kw(lx, "case") == false
-                && at_kw(lx, "default") == false {
+            && at_kw(lx, "default") == false {
             if lx.cur.kind == lex.TK_EOF {
                 perr(lx, "unexpected end of file, missing '}'");
             }
@@ -961,175 +951,173 @@ U0 parse_program(lex.Lexer* lx) {
             lex.lex_next(lx);
             want_p(lx, ";");
             ast.top_add(t, n);
-        } else {
-            if at_kw(lx, "const") {
-                I64 n = ast.node_new(t, ast.ND_GLOBAL, lx.cur.line, lx.cur.col);
-                lex.lex_next(lx);
-                parse_type(lx, n);
-                if lx.cur.kind != lex.TK_IDENT {
-                    perr(lx, "expected a constant name");
-                }
-                ast.ns(t, n, ast.N_NOFF, ast.intern(t, lex.tok_text(lx, lx.cur)));
-                ast.ns(t, n, ast.N_NLEN, lx.cur.tlen);
-                lex.lex_next(lx);
-                if at_p(lx, "[") {
-                    I64 dhead = 0;
-                    I64 dtail = 0;
-                    for at_p(lx, "[") {
-                        lex.lex_next(lx);
-                        I64 d = parse_expr(lx);
-                        if dhead == 0 {
-                            dhead = d;
-                        } else {
-                            ast.ns(t, dtail, ast.N_NEXT, d);
-                        }
-                        dtail = d;
-                        want_p(lx, "]");
-                    }
-                    ast.ns(t, n, ast.N_DALEN, 0);
-                    ast.ns(t, n, ast.N_C, dhead);
-                    if at_p(lx, "=") == false {
-                        perr(lx, "a table needs an initializer");
-                    }
+        } else if at_kw(lx, "const") {
+            I64 n = ast.node_new(t, ast.ND_GLOBAL, lx.cur.line, lx.cur.col);
+            lex.lex_next(lx);
+            parse_type(lx, n);
+            if lx.cur.kind != lex.TK_IDENT {
+                perr(lx, "expected a constant name");
+            }
+            ast.ns(t, n, ast.N_NOFF, ast.intern(t, lex.tok_text(lx, lx.cur)));
+            ast.ns(t, n, ast.N_NLEN, lx.cur.tlen);
+            lex.lex_next(lx);
+            if at_p(lx, "[") {
+                I64 dhead = 0;
+                I64 dtail = 0;
+                for at_p(lx, "[") {
                     lex.lex_next(lx);
-                    ast.ns(t, n, ast.N_B, parse_ilist(lx));
-                    want_p(lx, ";");
-                    ast.top_add(t, n);
-                } else {
-                    if at_p(lx, "=") == false {
-                        perr(lx, "a constant needs an initializer");
-                    }
-                    lex.lex_next(lx);
-                    ast.ns(t, n, ast.N_A, parse_expr(lx));
-                    want_p(lx, ";");
-                    ast.top_add(t, n);
-                }
-            } else if at_kw(lx, "struct") || at_kw(lx, "union") ||
-                       (at_kw(lx, "unsafe") && ahead_kw(lx, "union")) {
-                I64 n = ast.node_new(t, ast.ND_SDEF, lx.cur.line, lx.cur.col);
-                if at_kw(lx, "unsafe") {
-                    ast.ns(t, n, ast.SDEF_UNSAFE, 1);
-                    lex.lex_next(lx);
-                }
-                if at_kw(lx, "union") {
-                    ast.ns(t, n, ast.N_OP, ast.SDEF_UNION);
-                }
-                lex.lex_next(lx);
-                if lx.cur.kind != lex.TK_IDENT {
-                    perr(lx, "expected a type name");
-                }
-                ast.ns(t, n, ast.N_NOFF, ast.intern(t, lex.tok_text(lx, lx.cur)));
-                ast.ns(t, n, ast.N_NLEN, lx.cur.tlen);
-                lex.lex_next(lx);
-                want_p(lx, "{");
-                I64 head = 0;
-                I64 tail = 0;
-                for at_p(lx, "}") == false {
-                    I64 f = ast.node_new(t, ast.ND_FDEF, lx.cur.line, lx.cur.col);
-                    parse_type(lx, f);
-                    if lx.cur.kind != lex.TK_IDENT {
-                        perr(lx, "expected a field name");
-                    }
-                    ast.ns(t, f, ast.N_NOFF, ast.intern(t, lex.tok_text(lx, lx.cur)));
-                    ast.ns(t, f, ast.N_NLEN, lx.cur.tlen);
-                    lex.lex_next(lx);
-                    want_p(lx, ";");
-                    if head == 0 {
-                        head = f;
+                    I64 d = parse_expr(lx);
+                    if dhead == 0 {
+                        dhead = d;
                     } else {
-                        ast.ns(t, tail, ast.N_NEXT, f);
+                        ast.ns(t, dtail, ast.N_NEXT, d);
                     }
-                    tail = f;
+                    dtail = d;
+                    want_p(lx, "]");
+                }
+                ast.ns(t, n, ast.N_DALEN, 0);
+                ast.ns(t, n, ast.N_C, dhead);
+                if at_p(lx, "=") == false {
+                    perr(lx, "a table needs an initializer");
                 }
                 lex.lex_next(lx);
-                ast.ns(t, n, ast.N_B, head);
+                ast.ns(t, n, ast.N_B, parse_ilist(lx));
+                want_p(lx, ";");
                 ast.top_add(t, n);
             } else {
-                I64 n = ast.node_new(t, ast.ND_FN, lx.cur.line, lx.cur.col);
-                parse_type(lx, n);
-                if lx.cur.kind != lex.TK_IDENT {
-                    perr(lx, "expected a function name");
+                if at_p(lx, "=") == false {
+                    perr(lx, "a constant needs an initializer");
                 }
-                ast.ns(t, n, ast.N_NOFF, ast.intern(t, lex.tok_text(lx, lx.cur)));
-                ast.ns(t, n, ast.N_NLEN, lx.cur.tlen);
                 lex.lex_next(lx);
-                if at_p(lx, "[") {
-                    ast.ns(t, n, ast.N_KIND, ast.ND_GLOBAL);
-                    ast.ns(t, n, ast.N_OP, ast.GLOB_MUT);
-                    I64 dhead = 0;
-                    I64 dtail = 0;
-                    for at_p(lx, "[") {
-                        lex.lex_next(lx);
-                        I64 d = parse_expr(lx);
-                        if dhead == 0 {
-                            dhead = d;
-                        } else {
-                            ast.ns(t, dtail, ast.N_NEXT, d);
-                        }
-                        dtail = d;
-                        want_p(lx, "]");
-                    }
-                    ast.ns(t, n, ast.N_DALEN, 0);
-                    ast.ns(t, n, ast.N_C, dhead);
-                    if at_p(lx, "=") == false {
-                        perr(lx, "a table needs an initializer");
-                    }
-                    lex.lex_next(lx);
-                    ast.ns(t, n, ast.N_B, parse_ilist(lx));
-                    want_p(lx, ";");
-                    ast.top_add(t, n);
-                    continue;
-                }
-                if at_p(lx, "=") {
-                    ast.ns(t, n, ast.N_KIND, ast.ND_GLOBAL);
-                    ast.ns(t, n, ast.N_OP, ast.GLOB_MUT);
-                    lex.lex_next(lx);
-                    ast.ns(t, n, ast.N_A, parse_expr(lx));
-                    want_p(lx, ";");
-                    ast.top_add(t, n);
-                    continue;
-                }
-                if at_p(lx, ";") {
-                    perr(lx, "a mutable global needs an initializer");
-                }
-                want_p(lx, "(");
-                I64 head = 0;
-                I64 tail = 0;
-                I64 np = 0;
-                for at_p(lx, ")") == false {
-                    I64 p = ast.node_new(t, ast.ND_PARAM, lx.cur.line, lx.cur.col);
-                    parse_type(lx, p);
-                    if at_p(lx, ".") && ahead_p_at(lx, 0, ".") && ahead_p_at(lx, 1, ".") {
-                        ast.ns(t, p, ast.N_OP, ast.PARAM_VARARG);
-                        lex.lex_next(lx);
-                        lex.lex_next(lx);
-                        lex.lex_next(lx);
-                    }
-                    if lx.cur.kind != lex.TK_IDENT {
-                        perr(lx, "expected a parameter name");
-                    }
-                    ast.ns(t, p, ast.N_NOFF, ast.intern(t, lex.tok_text(lx, lx.cur)));
-                    ast.ns(t, p, ast.N_NLEN, lx.cur.tlen);
-                    lex.lex_next(lx);
-                    np = np + 1;
-                    if head == 0 {
-                        head = p;
-                    } else {
-                        ast.ns(t, tail, ast.N_NEXT, p);
-                    }
-                    tail = p;
-                    if at_p(lx, ",") {
-                        lex.lex_next(lx);
-                    } else {
-                        break;
-                    }
-                }
-                want_p(lx, ")");
-                ast.ns(t, n, ast.N_B, head);
-                ast.ns(t, n, ast.N_IVAL, np);
-                ast.ns(t, n, ast.N_A, parse_block(lx));
+                ast.ns(t, n, ast.N_A, parse_expr(lx));
+                want_p(lx, ";");
                 ast.top_add(t, n);
             }
+        } else if at_kw(lx, "struct") || at_kw(lx, "union") ||
+            (at_kw(lx, "unsafe") && ahead_kw(lx, "union")) {
+            I64 n = ast.node_new(t, ast.ND_SDEF, lx.cur.line, lx.cur.col);
+            if at_kw(lx, "unsafe") {
+                ast.ns(t, n, ast.SDEF_UNSAFE, 1);
+                lex.lex_next(lx);
+            }
+            if at_kw(lx, "union") {
+                ast.ns(t, n, ast.N_OP, ast.SDEF_UNION);
+            }
+            lex.lex_next(lx);
+            if lx.cur.kind != lex.TK_IDENT {
+                perr(lx, "expected a type name");
+            }
+            ast.ns(t, n, ast.N_NOFF, ast.intern(t, lex.tok_text(lx, lx.cur)));
+            ast.ns(t, n, ast.N_NLEN, lx.cur.tlen);
+            lex.lex_next(lx);
+            want_p(lx, "{");
+            I64 head = 0;
+            I64 tail = 0;
+            for at_p(lx, "}") == false {
+                I64 f = ast.node_new(t, ast.ND_FDEF, lx.cur.line, lx.cur.col);
+                parse_type(lx, f);
+                if lx.cur.kind != lex.TK_IDENT {
+                    perr(lx, "expected a field name");
+                }
+                ast.ns(t, f, ast.N_NOFF, ast.intern(t, lex.tok_text(lx, lx.cur)));
+                ast.ns(t, f, ast.N_NLEN, lx.cur.tlen);
+                lex.lex_next(lx);
+                want_p(lx, ";");
+                if head == 0 {
+                    head = f;
+                } else {
+                    ast.ns(t, tail, ast.N_NEXT, f);
+                }
+                tail = f;
+            }
+            lex.lex_next(lx);
+            ast.ns(t, n, ast.N_B, head);
+            ast.top_add(t, n);
+        } else {
+            I64 n = ast.node_new(t, ast.ND_FN, lx.cur.line, lx.cur.col);
+            parse_type(lx, n);
+            if lx.cur.kind != lex.TK_IDENT {
+                perr(lx, "expected a function name");
+            }
+            ast.ns(t, n, ast.N_NOFF, ast.intern(t, lex.tok_text(lx, lx.cur)));
+            ast.ns(t, n, ast.N_NLEN, lx.cur.tlen);
+            lex.lex_next(lx);
+            if at_p(lx, "[") {
+                ast.ns(t, n, ast.N_KIND, ast.ND_GLOBAL);
+                ast.ns(t, n, ast.N_OP, ast.GLOB_MUT);
+                I64 dhead = 0;
+                I64 dtail = 0;
+                for at_p(lx, "[") {
+                    lex.lex_next(lx);
+                    I64 d = parse_expr(lx);
+                    if dhead == 0 {
+                        dhead = d;
+                    } else {
+                        ast.ns(t, dtail, ast.N_NEXT, d);
+                    }
+                    dtail = d;
+                    want_p(lx, "]");
+                }
+                ast.ns(t, n, ast.N_DALEN, 0);
+                ast.ns(t, n, ast.N_C, dhead);
+                if at_p(lx, "=") == false {
+                    perr(lx, "a table needs an initializer");
+                }
+                lex.lex_next(lx);
+                ast.ns(t, n, ast.N_B, parse_ilist(lx));
+                want_p(lx, ";");
+                ast.top_add(t, n);
+                continue;
+            }
+            if at_p(lx, "=") {
+                ast.ns(t, n, ast.N_KIND, ast.ND_GLOBAL);
+                ast.ns(t, n, ast.N_OP, ast.GLOB_MUT);
+                lex.lex_next(lx);
+                ast.ns(t, n, ast.N_A, parse_expr(lx));
+                want_p(lx, ";");
+                ast.top_add(t, n);
+                continue;
+            }
+            if at_p(lx, ";") {
+                perr(lx, "a mutable global needs an initializer");
+            }
+            want_p(lx, "(");
+            I64 head = 0;
+            I64 tail = 0;
+            I64 np = 0;
+            for at_p(lx, ")") == false {
+                I64 p = ast.node_new(t, ast.ND_PARAM, lx.cur.line, lx.cur.col);
+                parse_type(lx, p);
+                if at_p(lx, ".") && ahead_p_at(lx, 0, ".") && ahead_p_at(lx, 1, ".") {
+                    ast.ns(t, p, ast.N_OP, ast.PARAM_VARARG);
+                    lex.lex_next(lx);
+                    lex.lex_next(lx);
+                    lex.lex_next(lx);
+                }
+                if lx.cur.kind != lex.TK_IDENT {
+                    perr(lx, "expected a parameter name");
+                }
+                ast.ns(t, p, ast.N_NOFF, ast.intern(t, lex.tok_text(lx, lx.cur)));
+                ast.ns(t, p, ast.N_NLEN, lx.cur.tlen);
+                lex.lex_next(lx);
+                np = np + 1;
+                if head == 0 {
+                    head = p;
+                } else {
+                    ast.ns(t, tail, ast.N_NEXT, p);
+                }
+                tail = p;
+                if at_p(lx, ",") {
+                    lex.lex_next(lx);
+                } else {
+                    break;
+                }
+            }
+            want_p(lx, ")");
+            ast.ns(t, n, ast.N_B, head);
+            ast.ns(t, n, ast.N_IVAL, np);
+            ast.ns(t, n, ast.N_A, parse_block(lx));
+            ast.top_add(t, n);
         }
     }
 }

@@ -37,6 +37,7 @@ struct Em {
     I64 ro2;
     I64 macho;
 }
+
 Em* em_sized(check.Ck* c, I64 out) {
     Em* e = heap.alloc(sizeof(Em)) as Em*;
     e.c = c;
@@ -71,9 +72,11 @@ Em* em_sized(check.Ck* c, I64 out) {
     e.macho = 0;
     return e;
 }
+
 Em* em_new(check.Ck* c) {
     return em_sized(c, 48 << 20);
 }
+
 U0 em_reset(Em* e) {
     e.len = 0;
     e.sblen = 0;
@@ -85,6 +88,7 @@ U0 em_reset(Em* e) {
     e.nsw = 0;
     e.nh = 0;
 }
+
 U0 out(Em* e, U8* s) {
     if e.len + s.len > e.cap {
         diag.die("output buffer full");
@@ -94,10 +98,12 @@ U0 out(Em* e, U8* s) {
     }
     e.len = e.len + s.len;
 }
+
 U0 outc(Em* e, I64 ch) {
     e.buf[e.len] = ch as U8;
     e.len = e.len + 1;
 }
+
 U0 outu(Em* e, I64 v) {
     U64 u = v as U64;
     if u >= 10 {
@@ -105,6 +111,7 @@ U0 outu(Em* e, I64 v) {
     }
     outc(e, '0' + ((u % 10) as I64));
 }
+
 U0 outi(Em* e, I64 v) {
     if v < 0 {
         outc(e, '-');
@@ -113,15 +120,18 @@ U0 outi(Em* e, I64 v) {
     }
     outu(e, v);
 }
+
 U0 lbl(Em* e, I64 n) {
     out(e, ".Lt");
     outi(e, n);
 }
+
 I64 newlabel(Em* e) {
     I64 l = e.nlabel;
     e.nlabel = l + 1;
     return l;
 }
+
 I64 pool(Em* e, U8* s) {
     if e.nstr >= 16384 {
         diag.die("too many string literals");
@@ -136,16 +146,19 @@ I64 pool(Em* e, U8* s) {
     e.nstr = id + 1;
     return id;
 }
+
 U0 sbc(Em* e, I64 ch) {
     e.sb[e.sblen] = ch as U8;
     e.sblen = e.sblen + 1;
 }
+
 U0 sbu(Em* e, I64 v) {
     if v >= 10 {
         sbu(e, v / 10);
     }
     sbc(e, '0' + v % 10);
 }
+
 I64 pool_site(Em* e, I64 n) {
     ast.Ast* t = e.t;
     U8* path = ast.file_path(t, ast.ng(t, n, ast.N_FID));
@@ -168,6 +181,7 @@ I64 pool_site(Em* e, I64 n) {
     e.nstr = id + 1;
     return id;
 }
+
 I64 hoisted(Em* e, I64 n) {
     if e.o.on == 0 {
         return 0;
@@ -183,6 +197,7 @@ I64 hoisted(Em* e, I64 n) {
     }
     return 0;
 }
+
 I64 spreg(Em* e, I64 n) {
     if e.o.on == 0 {
         return -1;
@@ -198,6 +213,7 @@ I64 spreg(Em* e, I64 n) {
     }
     return -1;
 }
+
 I64 leafish(Em* e, I64 n) {
     ast.Ast* t = e.t;
     I64 k = ast.nkind(t, n);
@@ -218,12 +234,14 @@ I64 leafish(Em* e, I64 n) {
     }
     return 0;
 }
+
 I64 arg_bytes(check.Ck* c, I64 p) {
     if check.tp_isptr(check.resolve_dty(c, p)) {
         return 32;
     }
     return 8;
 }
+
 U0 emit_sym(Em* e, I64 f) {
     ast.Ast* t = e.t;
     U8* path = ast.pkg_path(t, ast.node_pkg(t, f));
@@ -239,6 +257,7 @@ U0 emit_sym(Em* e, I64 f) {
     }
     out(e, ast.nname(t, f));
 }
+
 Bool struct_has_caps(Em* e, I64 sid) {
     ast.Ast* t = e.t;
     if ast.nop(t, sid) == ast.SDEF_UNION {
@@ -252,6 +271,7 @@ Bool struct_has_caps(Em* e, I64 sid) {
     }
     return false;
 }
+
 Bool access_ptee_has_caps(Em* e, I64 n) {
     I64 bt = check.get_ty(e.c, ast.na(e.t, n));
     if check.tp_cls(bt) != ast.CLS_STRUCTP {
@@ -259,6 +279,7 @@ Bool access_ptee_has_caps(Em* e, I64 n) {
     }
     return struct_has_caps(e, check.tp_sid(bt));
 }
+
 I64 struct_ncaps(Em* e, I64 sid) {
     ast.Ast* t = e.t;
     I64 n = 0;
@@ -270,13 +291,16 @@ I64 struct_ncaps(Em* e, I64 sid) {
     }
     return n;
 }
+
 U0 emit_desc_sym(Em* e, I64 sid) {
     emit_sym(e, sid);
     out(e, ".caps");
 }
+
 Bool in_unit(Em* e, I64 d) {
     return e.c.only < 0 || ast.node_pkg(e.t, d) == e.c.only;
 }
+
 I64 count_descs(Em* e) {
     ast.Ast* t = e.t;
     I64 n = 0;
@@ -289,6 +313,7 @@ I64 count_descs(Em* e) {
     }
     return n;
 }
+
 U0 emit_descs(Em* e) {
     ast.Ast* t = e.t;
     for I64 d = t.top; d != 0; d = ast.nnext(t, d) {

@@ -254,13 +254,20 @@ U0 st_raw(gen.Em* e, I64 off, U8* r) {
 
 U0 ld_at(gen.Em* e, I64 kind, U8* addr) {
     switch kind {
-        case ast.SK_I8:          gen.out(e, "  ldrsb x0, ");
-        case ast.SK_U8, ast.SK_BOOL: gen.out(e, "  ldrb w0, ");
-        case ast.SK_I16:         gen.out(e, "  ldrsh x0, ");
-        case ast.SK_U16:         gen.out(e, "  ldrh w0, ");
-        case ast.SK_I32:         gen.out(e, "  ldrsw x0, ");
-        case ast.SK_U32:         gen.out(e, "  ldr w0, ");
-        default:                 gen.out(e, "  ldr x0, ");
+        case ast.SK_I8:
+            gen.out(e, "  ldrsb x0, ");
+        case ast.SK_U8, ast.SK_BOOL:
+            gen.out(e, "  ldrb w0, ");
+        case ast.SK_I16:
+            gen.out(e, "  ldrsh x0, ");
+        case ast.SK_U16:
+            gen.out(e, "  ldrh w0, ");
+        case ast.SK_I32:
+            gen.out(e, "  ldrsw x0, ");
+        case ast.SK_U32:
+            gen.out(e, "  ldr w0, ");
+        default:
+            gen.out(e, "  ldr x0, ");
     }
     gen.out(e, addr);
     gen.out(e, "\n");
@@ -268,10 +275,14 @@ U0 ld_at(gen.Em* e, I64 kind, U8* addr) {
 
 U0 st_at(gen.Em* e, I64 kind, U8* addr) {
     switch ast.sk_size(kind) {
-        case 1: gen.out(e, "  strb w0, ");
-        case 2: gen.out(e, "  strh w0, ");
-        case 4: gen.out(e, "  str w0, ");
-        default: gen.out(e, "  str x0, ");
+        case 1:
+            gen.out(e, "  strb w0, ");
+        case 2:
+            gen.out(e, "  strh w0, ");
+        case 4:
+            gen.out(e, "  str w0, ");
+        default:
+            gen.out(e, "  str x0, ");
     }
     gen.out(e, addr);
     gen.out(e, "\n");
@@ -317,12 +328,18 @@ U0 st_fp(gen.Em* e, I64 kind, I64 off) {
 
 U0 norm(gen.Em* e, I64 kind) {
     switch kind {
-        case ast.SK_I8:  gen.out(e, "  sxtb x0, w0\n");
-        case ast.SK_U8:  gen.out(e, "  uxtb w0, w0\n");
-        case ast.SK_I16: gen.out(e, "  sxth x0, w0\n");
-        case ast.SK_U16: gen.out(e, "  uxth w0, w0\n");
-        case ast.SK_I32: gen.out(e, "  sxtw x0, w0\n");
-        case ast.SK_U32: gen.out(e, "  mov w0, w0\n");
+        case ast.SK_I8:
+            gen.out(e, "  sxtb x0, w0\n");
+        case ast.SK_U8:
+            gen.out(e, "  uxtb w0, w0\n");
+        case ast.SK_I16:
+            gen.out(e, "  sxth x0, w0\n");
+        case ast.SK_U16:
+            gen.out(e, "  uxth w0, w0\n");
+        case ast.SK_I32:
+            gen.out(e, "  sxtw x0, w0\n");
+        case ast.SK_U32:
+            gen.out(e, "  mov w0, w0\n");
     }
 }
 
@@ -1402,34 +1419,51 @@ U0 gen_expr(gen.Em* e, I64 n) {
                 gen.out(e, "  fmov d0, x0\n  fmov d1, x1\n");
                 if op == ast.OP_ADD || op == ast.OP_SUB || op == ast.OP_MUL || op == ast.OP_DIV {
                     switch op {
-                        case ast.OP_ADD: gen.out(e, "  fadd d0, d0, d1\n");
-                        case ast.OP_SUB: gen.out(e, "  fsub d0, d0, d1\n");
-                        case ast.OP_MUL: gen.out(e, "  fmul d0, d0, d1\n");
-                        default:         gen.out(e, "  fdiv d0, d0, d1\n");
+                        case ast.OP_ADD:
+                            gen.out(e, "  fadd d0, d0, d1\n");
+                        case ast.OP_SUB:
+                            gen.out(e, "  fsub d0, d0, d1\n");
+                        case ast.OP_MUL:
+                            gen.out(e, "  fmul d0, d0, d1\n");
+                        default:
+                            gen.out(e, "  fdiv d0, d0, d1\n");
                     }
                     gen.out(e, "  fmov x0, d0\n");
                     return;
                 }
                 gen.out(e, "  fcmp d0, d1\n  cset x0, ");
                 switch op {
-                    case ast.OP_EQ: gen.out(e, "eq");
-                    case ast.OP_NE: gen.out(e, "ne");
-                    case ast.OP_LT: gen.out(e, "mi");
-                    case ast.OP_LE: gen.out(e, "ls");
-                    case ast.OP_GT: gen.out(e, "gt");
-                    default:        gen.out(e, "ge");
+                    case ast.OP_EQ:
+                        gen.out(e, "eq");
+                    case ast.OP_NE:
+                        gen.out(e, "ne");
+                    case ast.OP_LT:
+                        gen.out(e, "mi");
+                    case ast.OP_LE:
+                        gen.out(e, "ls");
+                    case ast.OP_GT:
+                        gen.out(e, "gt");
+                    default:
+                        gen.out(e, "ge");
                 }
                 gen.out(e, "\n");
                 return;
             }
             switch op {
-                case ast.OP_ADD: gen.out(e, "  add x0, x0, x1\n"); norm(e, rk); return;
-                case ast.OP_SUB: gen.out(e, "  sub x0, x0, x1\n"); norm(e, rk); return;
-                case ast.OP_MUL: gen.out(e, "  mul x0, x0, x1\n"); norm(e, rk); return;
-                case ast.OP_AND: gen.out(e, "  and x0, x0, x1\n"); norm(e, rk); return;
-                case ast.OP_XOR: gen.out(e, "  eor x0, x0, x1\n"); norm(e, rk); return;
-                case ast.OP_OR:  gen.out(e, "  orr x0, x0, x1\n"); norm(e, rk); return;
-                case ast.OP_SHL: gen.out(e, "  lsl x0, x0, x1\n"); norm(e, rk); return;
+                case ast.OP_ADD:
+                    gen.out(e, "  add x0, x0, x1\n"); norm(e, rk); return;
+                case ast.OP_SUB:
+                    gen.out(e, "  sub x0, x0, x1\n"); norm(e, rk); return;
+                case ast.OP_MUL:
+                    gen.out(e, "  mul x0, x0, x1\n"); norm(e, rk); return;
+                case ast.OP_AND:
+                    gen.out(e, "  and x0, x0, x1\n"); norm(e, rk); return;
+                case ast.OP_XOR:
+                    gen.out(e, "  eor x0, x0, x1\n"); norm(e, rk); return;
+                case ast.OP_OR:
+                    gen.out(e, "  orr x0, x0, x1\n"); norm(e, rk); return;
+                case ast.OP_SHL:
+                    gen.out(e, "  lsl x0, x0, x1\n"); norm(e, rk); return;
                 case ast.OP_SHR:
                     if sg {
                         gen.out(e, "  asr x0, x0, x1\n");
@@ -1470,12 +1504,34 @@ U0 gen_expr(gen.Em* e, I64 n) {
             }
             gen.out(e, "  cmp x0, x1\n  cset x0, ");
             switch op {
-                case ast.OP_EQ: gen.out(e, "eq");
-                case ast.OP_NE: gen.out(e, "ne");
-                case ast.OP_LT: if sg { gen.out(e, "lt"); } else { gen.out(e, "cc"); }
-                case ast.OP_LE: if sg { gen.out(e, "le"); } else { gen.out(e, "ls"); }
-                case ast.OP_GT: if sg { gen.out(e, "gt"); } else { gen.out(e, "hi"); }
-                default:        if sg { gen.out(e, "ge"); } else { gen.out(e, "cs"); }
+                case ast.OP_EQ:
+                    gen.out(e, "eq");
+                case ast.OP_NE:
+                    gen.out(e, "ne");
+                case ast.OP_LT:
+                    if sg {
+                        gen.out(e, "lt");
+                    } else {
+                        gen.out(e, "cc");
+                    }
+                case ast.OP_LE:
+                    if sg {
+                        gen.out(e, "le");
+                    } else {
+                        gen.out(e, "ls");
+                    }
+                case ast.OP_GT:
+                    if sg {
+                        gen.out(e, "gt");
+                    } else {
+                        gen.out(e, "hi");
+                    }
+                default:
+                    if sg {
+                        gen.out(e, "ge");
+                    } else {
+                        gen.out(e, "cs");
+                    }
             }
             gen.out(e, "\n");
             return;

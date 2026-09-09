@@ -150,18 +150,16 @@ U0 lex_scan(Lexer* lx, Tok* t) {
         I64 c = _peek(lx);
         if c == ' ' || c == '\t' || c == '\r' || c == '\n' {
             _adv(lx);
-        } else {
-            if c == '/' && _peek2(lx) == '/' {
-                for true {
-                    I64 d = _peek(lx);
-                    if d == -1 || d == '\n' {
-                        break;
-                    }
-                    _adv(lx);
+        } else if c == '/' && _peek2(lx) == '/' {
+            for true {
+                I64 d = _peek(lx);
+                if d == -1 || d == '\n' {
+                    break;
                 }
-            } else {
-                break;
+                _adv(lx);
             }
+        } else {
+            break;
         }
     }
     t.line = lx.line;

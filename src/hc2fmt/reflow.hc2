@@ -1,0 +1,155 @@
+import "heap";
+
+const I64 NL_MAX = 2;
+
+Bool block_open(Fm* f, Tok* t) {
+    return p1(f, t, '{') && t.flag != BK_INIT;
+}
+
+I64 prev_code(Fm* f, I64 i) {
+    i = i - 1;
+    for i >= 0 && tok(f, i).kind == TK_NL {
+        i = i - 1;
+    }
+    return i;
+}
+
+I64 group_start(Fm* f, I64 i, I64* nlb) {
+    for true {
+        I64 c = prev_code(f, i);
+        if c < 0 || tok(f, c).kind != TK_COMMENT || nlb[i] != 1 {
+            return i;
+        }
+        if prev_code(f, c) >= 0 && nlb[c] == 0 {
+            return i;
+        }
+        i = c;
+    }
+    return i;
+}
+
+U0 want_break(I64* nlb, I64 i) {
+    if nlb[i] < 1 {
+        nlb[i] = 1;
+    }
+}
+
+U0 reflow(Fm* f) {
+    Lx* lx = f.lx;
+    I64 n = lx.ntok;
+    I64* nlb = heap.alloc(n * sizeof(I64)) as I64*;
+    I64 pending = 0;
+    I64 prev = -1;
+    I64 pclosed = 0;
+    Bool pcolon = false;
+    Bool incase = false;
+    f.sp = 0;
+    for I64 i = 0; i < n; i++ {
+        Tok* t = tok(f, i);
+        if t.kind == TK_NL {
+            pending = pending + 1;
+            continue;
+        }
+        nlb[i] = pending;
+        pending = 0;
+        Bool pcomment = prev >= 0 && tok(f, prev).kind == TK_COMMENT;
+        Bool popen = prev >= 0 && block_open(f, tok(f, prev));
+        Bool pclose = pclosed != 0 && pclosed != BK_INIT;
+        Bool after = popen || pclose || pcolon;
+        I64 closed = 0;
+        Bool colon = false;
+        if p1(f, t, '{') {
+            I64 k = t.flag;
+            if k == 0 {
+                k = BK_BLOCK;
+            }
+            push_bk(f, k);
+            if after {
+                want_break(nlb, i);
+            } else if block_open(f, t) && pcomment == false {
+                nlb[i] = 0;
+            }
+        } else if p1(f, t, '}') {
+            if f.sp > 0 {
+                f.sp = f.sp - 1;
+                closed = f.stk[f.sp];
+            }
+            if closed != BK_INIT {
+                want_break(nlb, i);
+            }
+        } else if tok_is(f, i, "else") && is_keyword_at(f, i) && pclose && pcomment == false {
+            nlb[i] = 0;
+        } else if t.kind != TK_COMMENT && after {
+            want_break(nlb, i);
+        }
+        if is_case_label(f, t) {
+            incase = true;
+        }
+        if incase && p1(f, t, ':') {
+            incase = false;
+            colon = true;
+        }
+        if t.kind == TK_IDENT && t.flag == FL_DEF {
+            I64 g = group_start(f, i, nlb);
+            nlb[g] = NL_MAX;
+            if prev_code(f, g) < 0 {
+                nlb[g] = 0;
+            }
+        }
+        if nlb[i] > NL_MAX {
+            nlb[i] = NL_MAX;
+        }
+        if prev < 0 {
+            nlb[i] = 0;
+        }
+        prev = i;
+        pclosed = closed;
+        pcolon = colon;
+        if t.kind == TK_EOF {
+            break;
+        }
+    }
+    I64 total = 0;
+    for I64 i = 0; i < n; i++ {
+        if tok(f, i).kind != TK_NL {
+            total = total + nlb[i] + 1;
+        }
+    }
+    Tok* nt = heap.alloc(total * sizeof(Tok)) as Tok*;
+    I64 k = 0;
+    I64 lines = 1;
+    for I64 i = 0; i < n; i++ {
+        Tok* t = tok(f, i);
+        if t.kind == TK_NL {
+            continue;
+        }
+        for I64 j = 0; j < nlb[i]; j++ {
+            Tok* b = nt + k;
+            b.kind = TK_NL;
+            b.line = 0;
+            b.off = t.off;
+            b.tlen = 0;
+            b.flag = 0;
+            k = k + 1;
+            lines = lines + 1;
+        }
+        Tok* d = nt + k;
+        d.kind = t.kind;
+        d.line = t.line;
+        d.off = t.off;
+        d.tlen = t.tlen;
+        d.flag = t.flag;
+        k = k + 1;
+    }
+    heap.free(lx.toks as U8*);
+    heap.free(nlb as U8*);
+    lx.toks = nt;
+    lx.ntok = total;
+    lx.nlines = lines;
+    f.sp = 0;
+    f.lastclosed = 0;
+    I64 lcap = lines + 2;
+    f.lines = heap.alloc(lcap * sizeof(Line)) as Line*;
+    f.cuts = heap.alloc(lcap * MAXCUT * sizeof(I64)) as I64*;
+    f.pads = heap.alloc(lcap * MAXCUT * sizeof(I64)) as I64*;
+}

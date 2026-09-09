@@ -3,13 +3,13 @@ import "heap";
 import "hc2/asm";
 import "hc2/isa";
 
-const I64 VBASE = 0x400000;
+const I64 VBASE          = 0x400000;
 const I64 ELF_MAGIC64_LE = 0x10102464C457F;
-const I64 ET_EXEC = 2;
-const I64 EM_X86_64 = 62;
-const I64 EM_AARCH64 = 183;
-const I64 PT_LOAD = 1;
-const I64 PF_RWX = 7;
+const I64 ET_EXEC        = 2;
+const I64 EM_X86_64      = 62;
+const I64 EM_AARCH64     = 183;
+const I64 PT_LOAD        = 1;
+const I64 PF_RWX         = 7;
 
 struct Ehdr {
     I64 ident;

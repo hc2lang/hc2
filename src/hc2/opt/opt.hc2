@@ -497,7 +497,7 @@ U0 _wvisit(Op* o, I64 n, I64 mk) {
             if ast.nkind(t, b) == ast.ND_VAR {
                 I64 esz = ast.ng(t, n, ast.INDEX_ESZ);
                 _wacc(o, n, ast.ng(t, b, ast.VAR_OFF),
-                      _waoffof(o, ast.nb(t, n), esz), esz, 0, mk);
+                    _waoffof(o, ast.nb(t, n), esz), esz, 0, mk);
             }
         }
         return;
@@ -508,7 +508,7 @@ U0 _wvisit(Op* o, I64 n, I64 mk) {
             I64 b = ast.na(t, n);
             if ast.nkind(t, b) == ast.ND_VAR {
                 _wacc(o, n, ast.ng(t, b, ast.VAR_OFF), ast.ng(t, n, ast.FIELD_OFF),
-                      ast.ng(t, n, ast.FIELD_SIZE), ast.ng(t, n, ast.FIELD_W), mk);
+                    ast.ng(t, n, ast.FIELD_SIZE), ast.ng(t, n, ast.FIELD_W), mk);
             }
         }
         return;
@@ -533,7 +533,7 @@ U0 _wvisit(Op* o, I64 n, I64 mk) {
                 if ast.nkind(t, b) == ast.ND_VAR {
                     I64 esz = ast.ng(t, l, ast.INDEX_ESZ);
                     _wacc(o, l, ast.ng(t, b, ast.VAR_OFF),
-                          _waoffof(o, ast.nb(t, l), esz), esz, 1, mk);
+                        _waoffof(o, ast.nb(t, l), esz), esz, 1, mk);
                 }
             }
             _wvisit(o, ast.nb(t, n), mk);
