@@ -1,0 +1,547 @@
+import "str";
+
+const I64 FL_TYPESTAR = 1;
+const I64 FL_UNARY    = 1;
+const I64 FL_RANGE    = 1;
+const I64 FL_SLICE    = 1;
+const I64 FL_CASE     = 1;
+const I64 FL_DEF      = 2;
+
+const I64 BK_BLOCK   = 1;
+const I64 BK_SWITCH  = 2;
+const I64 BK_STRUCT  = 3;
+const I64 BK_ASM     = 4;
+const I64 BK_INIT    = 5;
+const I64 BK_PAREN   = 6;
+const I64 BK_BRACKET = 7;
+
+const I64 EX_STMT = 0;
+const I64 EX_ELEM = 1;
+const I64 EX_CASE = 2;
+
+Tok* tok(Fm* f, I64 i) {
+    return f.lx.toks + i;
+}
+
+Tok* cur(Fm* f) {
+    return f.lx.toks + f.p;
+}
+
+I64 skip_nc(Fm* f, I64 i) {
+    Tok* t = tok(f, i);
+    for t.kind == TK_NL || t.kind == TK_COMMENT {
+        i = i + 1;
+        t = tok(f, i);
+    }
+    return i;
+}
+
+U0 next(Fm* f) {
+    if cur(f).kind != TK_EOF {
+        f.p = skip_nc(f, f.p + 1);
+    }
+}
+
+I64 peek_at(Fm* f, I64 n) {
+    I64 i = f.p;
+    for I64 k = 0; k < n; k++ {
+        if tok(f, i).kind == TK_EOF {
+            return i;
+        }
+        i = skip_nc(f, i + 1);
+    }
+    return i;
+}
+
+Bool tok_is(Fm* f, I64 i, U8* s) {
+    Tok* t = tok(f, i);
+    if t.kind != TK_IDENT && t.kind != TK_PUNCT {
+        return false;
+    }
+    return str.eq(tok_text(f.lx, t), s);
+}
+
+Bool at(Fm* f, U8* s) {
+    return tok_is(f, f.p, s);
+}
+
+U0 expect(Fm* f, U8* s) {
+    if at(f, s) {
+        next(f);
+    }
+}
+
+U0 mark(Fm* f, I64 flag) {
+    cur(f).flag = flag;
+}
+
+Bool is_kw(U8* s) {
+    if str.eq(s, "if") || str.eq(s, "for") || str.eq(s, "switch") || str.eq(s, "return") {
+        return true;
+    }
+    if str.eq(s, "defer") || str.eq(s, "case") || str.eq(s, "default") || str.eq(s, "else") {
+        return true;
+    }
+    if str.eq(s, "import") || str.eq(s, "const") || str.eq(s, "struct") || str.eq(s, "union") {
+        return true;
+    }
+    if str.eq(s, "unsafe") || str.eq(s, "asm") || str.eq(s, "break") || str.eq(s, "continue") {
+        return true;
+    }
+    return str.eq(s, "fallthrough") || str.eq(s, "as") || str.eq(s, "sizeof");
+}
+
+I64 code_before(Fm* f, I64 i) {
+    i = i - 1;
+    for i >= 0 {
+        I64 k = tok(f, i).kind;
+        if k != TK_NL && k != TK_COMMENT {
+            return i;
+        }
+        i = i - 1;
+    }
+    return -1;
+}
+
+Bool is_member(Fm* f, I64 i) {
+    I64 b = code_before(f, i);
+    return b >= 0 && tok_is(f, b, ".");
+}
+
+Bool is_keyword_at(Fm* f, I64 i) {
+    Tok* t = tok(f, i);
+    if t.kind != TK_IDENT || is_member(f, i) {
+        return false;
+    }
+    return is_kw(tok_text(f.lx, t));
+}
+
+Bool ends_operand(Fm* f, I64 i) {
+    if i < 0 {
+        return false;
+    }
+    Tok* t = tok(f, i);
+    if t.kind == TK_NUM || t.kind == TK_STR || t.kind == TK_MEM {
+        return true;
+    }
+    if t.kind == TK_IDENT {
+        return is_keyword_at(f, i) == false;
+    }
+    return tok_is(f, i, ")") || tok_is(f, i, "]");
+}
+
+U0 parse_type(Fm* f) {
+    if cur(f).kind != TK_IDENT {
+        return;
+    }
+    next(f);
+    if at(f, ".") && tok(f, peek_at(f, 1)).kind == TK_IDENT {
+        next(f);
+        next(f);
+    }
+    if at(f, "*") {
+        mark(f, FL_TYPESTAR);
+        next(f);
+    }
+    if at(f, "(") {
+        next(f);
+        for at(f, ")") == false && cur(f).kind != TK_EOF {
+            I64 before = f.p;
+            parse_type(f);
+            if at(f, ",") {
+                next(f);
+            }
+            if f.p == before {
+                next(f);
+            }
+        }
+        expect(f, ")");
+        if at(f, "*") {
+            mark(f, FL_TYPESTAR);
+            next(f);
+        }
+    }
+}
+
+Bool is_decl(Fm* f) {
+    Tok* t = cur(f);
+    if t.kind != TK_IDENT {
+        return false;
+    }
+    if is_kw(tok_text(f.lx, t)) && tok_is(f, peek_at(f, 1), ".") == false {
+        return false;
+    }
+    I64 n = 1;
+    if tok_is(f, peek_at(f, 1), ".") {
+        if tok(f, peek_at(f, 2)).kind != TK_IDENT {
+            return false;
+        }
+        n = 3;
+    }
+    I64 i = peek_at(f, n);
+    if tok(f, i).kind == TK_IDENT {
+        return true;
+    }
+    if tok_is(f, i, "*") {
+        return true;
+    }
+    if tok_is(f, i, "(") == false {
+        return false;
+    }
+    I64 depth = 0;
+    for true {
+        if tok(f, i).kind == TK_EOF {
+            return false;
+        }
+        if tok_is(f, i, "(") {
+            depth = depth + 1;
+        }
+        if tok_is(f, i, ")") {
+            depth = depth - 1;
+            if depth == 0 {
+                break;
+            }
+        }
+        i = skip_nc(f, i + 1);
+    }
+    return tok_is(f, skip_nc(f, i + 1), "*");
+}
+
+U0 parse_expr(Fm* f, I64 mode) {
+    I64 depth = 0;
+    for cur(f).kind != TK_EOF {
+        if depth == 0 {
+            if at(f, ";") || at(f, "{") || at(f, "}") {
+                return;
+            }
+            if mode == EX_ELEM && at(f, ",") {
+                return;
+            }
+            if mode == EX_CASE && at(f, ":") {
+                return;
+            }
+        }
+        if at(f, "(") || at(f, "[") {
+            depth = depth + 1;
+            next(f);
+        } else if at(f, ")") || at(f, "]") {
+            if depth == 0 {
+                return;
+            }
+            depth = depth - 1;
+            next(f);
+        } else if at(f, "as") {
+            next(f);
+            parse_type(f);
+        } else if at(f, "sizeof") && tok_is(f, peek_at(f, 1), "(") {
+            next(f);
+            next(f);
+            parse_type(f);
+            expect(f, ")");
+        } else if at(f, "-") || at(f, "&") {
+            if ends_operand(f, code_before(f, f.p)) == false {
+                mark(f, FL_UNARY);
+            }
+            next(f);
+        } else if at(f, ":") {
+            if depth > 0 {
+                mark(f, FL_SLICE);
+            }
+            next(f);
+        } else if at(f, "...") {
+            if mode == EX_CASE {
+                mark(f, FL_RANGE);
+            }
+            next(f);
+        } else {
+            next(f);
+        }
+    }
+}
+
+U0 parse_dims(Fm* f) {
+    for at(f, "[") {
+        next(f);
+        parse_expr(f, EX_STMT);
+        expect(f, "]");
+    }
+}
+
+U0 parse_ilist(Fm* f) {
+    if at(f, "{") == false {
+        return;
+    }
+    mark(f, BK_INIT);
+    next(f);
+    for at(f, "}") == false && cur(f).kind != TK_EOF {
+        I64 before = f.p;
+        if at(f, "{") {
+            parse_ilist(f);
+        } else {
+            parse_expr(f, EX_ELEM);
+        }
+        if at(f, ",") {
+            next(f);
+        }
+        if f.p == before {
+            next(f);
+        }
+    }
+    expect(f, "}");
+}
+
+U0 parse_init(Fm* f) {
+    if at(f, "{") {
+        parse_ilist(f);
+    } else {
+        parse_expr(f, EX_STMT);
+    }
+}
+
+U0 parse_decl(Fm* f) {
+    parse_type(f);
+    if cur(f).kind == TK_IDENT {
+        next(f);
+    }
+    parse_dims(f);
+    if at(f, "=") {
+        next(f);
+        parse_init(f);
+    }
+    expect(f, ";");
+}
+
+U0 parse_block(Fm* f, I64 bk) {
+    if at(f, "{") == false {
+        return;
+    }
+    mark(f, bk);
+    next(f);
+    for at(f, "}") == false && cur(f).kind != TK_EOF {
+        I64 before = f.p;
+        parse_stmt(f);
+        if f.p == before {
+            next(f);
+        }
+    }
+    expect(f, "}");
+}
+
+U0 parse_switch(Fm* f) {
+    if at(f, "{") == false {
+        return;
+    }
+    mark(f, BK_SWITCH);
+    next(f);
+    for at(f, "}") == false && cur(f).kind != TK_EOF {
+        I64 before = f.p;
+        if at(f, "case") {
+            mark(f, FL_CASE);
+            next(f);
+            parse_expr(f, EX_CASE);
+            expect(f, ":");
+        } else if at(f, "default") {
+            mark(f, FL_CASE);
+            next(f);
+            expect(f, ":");
+        } else {
+            parse_stmt(f);
+        }
+        if f.p == before {
+            next(f);
+        }
+    }
+    expect(f, "}");
+}
+
+U0 parse_asm(Fm* f) {
+    if at(f, "{") == false {
+        return;
+    }
+    mark(f, BK_ASM);
+    next(f);
+    I64 depth = 1;
+    for cur(f).kind != TK_EOF {
+        if at(f, "{") {
+            depth = depth + 1;
+        } else if at(f, "}") {
+            depth = depth - 1;
+            if depth == 0 {
+                next(f);
+                return;
+            }
+        } else if at(f, "-") {
+            mark(f, FL_UNARY);
+        }
+        next(f);
+    }
+}
+
+U0 parse_stmt(Fm* f) {
+    if cur(f).kind == TK_STR {
+        parse_expr(f, EX_STMT);
+        expect(f, ";");
+        return;
+    }
+    if at(f, "if") {
+        next(f);
+        parse_expr(f, EX_STMT);
+        parse_block(f, BK_BLOCK);
+        if at(f, "else") {
+            next(f);
+            if at(f, "if") {
+                parse_stmt(f);
+            } else {
+                parse_block(f, BK_BLOCK);
+            }
+        }
+        return;
+    }
+    if at(f, "for") {
+        next(f);
+        if is_decl(f) {
+            parse_decl(f);
+            parse_expr(f, EX_STMT);
+            expect(f, ";");
+        }
+        parse_expr(f, EX_STMT);
+        parse_block(f, BK_BLOCK);
+        return;
+    }
+    if at(f, "switch") {
+        next(f);
+        parse_expr(f, EX_STMT);
+        parse_switch(f);
+        return;
+    }
+    if at(f, "return") || at(f, "defer") {
+        next(f);
+        parse_expr(f, EX_STMT);
+        expect(f, ";");
+        return;
+    }
+    if at(f, "break") || at(f, "continue") || at(f, "fallthrough") {
+        next(f);
+        expect(f, ";");
+        return;
+    }
+    if at(f, "unsafe") && tok_is(f, peek_at(f, 1), "{") {
+        next(f);
+        parse_block(f, BK_BLOCK);
+        return;
+    }
+    if at(f, "asm") && tok_is(f, peek_at(f, 1), "{") {
+        next(f);
+        parse_asm(f);
+        return;
+    }
+    if at(f, "{") {
+        parse_block(f, BK_BLOCK);
+        return;
+    }
+    if is_decl(f) {
+        parse_decl(f);
+        return;
+    }
+    parse_expr(f, EX_STMT);
+    expect(f, ";");
+}
+
+U0 parse_struct(Fm* f) {
+    if at(f, "{") == false {
+        return;
+    }
+    mark(f, BK_STRUCT);
+    next(f);
+    for at(f, "}") == false && cur(f).kind != TK_EOF {
+        I64 before = f.p;
+        parse_type(f);
+        if cur(f).kind == TK_IDENT {
+            next(f);
+        }
+        expect(f, ";");
+        if f.p == before {
+            next(f);
+        }
+    }
+    expect(f, "}");
+}
+
+U0 parse_params(Fm* f) {
+    expect(f, "(");
+    for at(f, ")") == false && cur(f).kind != TK_EOF {
+        I64 before = f.p;
+        parse_type(f);
+        if at(f, "...") {
+            next(f);
+        }
+        if cur(f).kind == TK_IDENT {
+            next(f);
+        }
+        if at(f, ",") {
+            next(f);
+        }
+        if f.p == before {
+            next(f);
+        }
+    }
+    expect(f, ")");
+}
+
+U0 parse_item(Fm* f) {
+    Tok* t0 = cur(f);
+    if at(f, "import") {
+        next(f);
+        if cur(f).kind == TK_STR {
+            next(f);
+        }
+        expect(f, ";");
+        return;
+    }
+    if at(f, "const") {
+        next(f);
+        parse_decl(f);
+        return;
+    }
+    if at(f, "struct") || at(f, "union") || (at(f, "unsafe") && tok_is(f, peek_at(f, 1), "union")) {
+        t0.flag = FL_DEF;
+        if at(f, "unsafe") {
+            next(f);
+        }
+        next(f);
+        if cur(f).kind == TK_IDENT {
+            next(f);
+        }
+        parse_struct(f);
+        return;
+    }
+    parse_type(f);
+    if cur(f).kind == TK_IDENT {
+        next(f);
+    }
+    if at(f, "(") {
+        parse_params(f);
+        if t0.kind == TK_IDENT {
+            t0.flag = FL_DEF;
+        }
+        parse_block(f, BK_BLOCK);
+        return;
+    }
+    parse_dims(f);
+    if at(f, "=") {
+        next(f);
+        parse_init(f);
+    }
+    expect(f, ";");
+}
+
+U0 parse_all(Fm* f) {
+    f.p = skip_nc(f, 0);
+    for cur(f).kind != TK_EOF {
+        I64 before = f.p;
+        parse_item(f);
+        if f.p == before {
+            next(f);
+        }
+    }
+}
